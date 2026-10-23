@@ -4,7 +4,8 @@
   const root = document.getElementById('tanji-approved-preview');
   const app = root.querySelector('.preview-app');
   const C = window.TanjiCore;
-  let content = C.toPublic(window.TANJI_SEED);
+  const bundledContent = C.toPublic(window.TANJI_SEED);
+  let content = bundledContent;
   const state = {page:'home',lang:'zh',category:'all',projectsPage:1,awardsPage:1};
   const routes = new Set(['home','about','topics','projects','contact']);
   let sending = false;
@@ -22,7 +23,13 @@
     right.disabled = track.scrollLeft >= track.scrollWidth - track.clientWidth - 2;
   }
   function render() {
-    const view = window.TanjiUI.renderPublic(content,state);
+    let view;
+    try { view = window.TanjiUI.renderPublic(content,state); }
+    catch (error) {
+      console.error('TanJi published content rendering failed; restoring bundled projects:',error);
+      content = bundledContent;
+      view = window.TanjiUI.renderPublic(content,state);
+    }
     app.innerHTML = view.html;
     root.lang = document.documentElement.lang = state.lang === 'zh' ? 'zh-Hant' : 'en';
     document.title = view.title;
@@ -90,9 +97,27 @@
   window.addEventListener('resize',syncCarousel);
   route(); render();
   // Render bundled content immediately. Published Firebase content wins when available.
-  if (false && location.protocol !== 'file:') window.TanjiCloud.loadPublic().then(remote=>{
+  if (location.protocol !== 'file:') window.TanjiCloud.loadPublic().then(remote=>{
     if (!remote) return;
-    content = C.toPublic(remote.content);
+    // Keep the last known-good projects if an incomplete publish hides them.
+    // Never silently substitute an empty or unrelated cloud portfolio.
+    let candidate;
+    try { candidate = C.toPublic(remote.content); }
+    catch (error) { console.warn('TanJi rejected invalid published content:',error); return; }
+    const visibleProjects = C.visible(candidate.projects).filter(p=>p.id!=='coolcity' && !/cool\s*city/i.test(p.titleEn||''));
+    const linkedAwards = C.visible(candidate.awards).filter(a=>visibleProjects.some(p=>p.id===a.projectId));
+    if (!visibleProjects.length || !linkedAwards.length) {
+      console.warn('TanJi cloud portfolio is empty or has no matching competition records; bundled content retained.');
+      return;
+    }
+    // Existing bundled competition entries must not vanish due to a partial cloud publish.
+    const cloudProjectIds = new Set(C.visible(candidate.projects).map(p=>p.id));
+    const cloudAwardIds = new Set(C.visible(candidate.awards).map(a=>a.id));
+    candidate.projects = candidate.projects.filter(p=>p.id!=='coolcity' && !/cool\s*city/i.test(p.titleEn||''));
+    candidate.awards = candidate.awards.filter(a=>candidate.projects.some(p=>p.id===a.projectId));
+    for (const p of bundledContent.projects) if (!cloudProjectIds.has(p.id)) candidate.projects.push(p);
+    for (const a of bundledContent.awards) if (!cloudAwardIds.has(a.id)) candidate.awards.push(a);
+    content = candidate;
     // Do not replace a form while a visitor is typing or sending it.
     if (state.page !== 'contact' && !sending) render();
   }).catch(error=>console.info('TanJi uses bundled content:',error?.code||'offline'));
