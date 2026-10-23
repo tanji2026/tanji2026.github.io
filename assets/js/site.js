@@ -90,7 +90,7 @@
   window.addEventListener('resize',syncCarousel);
   route(); render();
   // Render bundled content immediately. Published Firebase content wins when available.
-  if (location.protocol !== 'file:') window.TanjiCloud.loadPublic().then(remote=>{
+  if (false && location.protocol !== 'file:') window.TanjiCloud.loadPublic().then(remote=>{
     if (!remote) return;
     content = C.toPublic(remote.content);
     // Do not replace a form while a visitor is typing or sending it.
