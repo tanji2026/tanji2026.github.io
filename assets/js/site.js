@@ -104,17 +104,14 @@
     let candidate;
     try { candidate = C.toPublic(remote.content); }
     catch (error) { console.warn('TanJi rejected invalid published content:',error); return; }
-    const visibleProjects = C.visible(candidate.projects).filter(p=>p.id!=='coolcity' && !/cool\s*city/i.test(p.titleEn||''));
-    const linkedAwards = C.visible(candidate.awards).filter(a=>visibleProjects.some(p=>p.id===a.projectId));
-    if (!visibleProjects.length || !linkedAwards.length) {
-      console.warn('TanJi cloud portfolio is empty or has no matching competition records; bundled content retained.');
+    // A newly published project must not be rejected merely because it has no award yet.
+    // Preserve existing bundled entries when a partial cloud publish omits them.
+    if (!Array.isArray(candidate.projects) || !Array.isArray(candidate.awards)) {
+      console.warn('TanJi rejected incomplete published portfolio.');
       return;
     }
-    // Existing bundled competition entries must not vanish due to a partial cloud publish.
-    const cloudProjectIds = new Set(C.visible(candidate.projects).map(p=>p.id));
-    const cloudAwardIds = new Set(C.visible(candidate.awards).map(a=>a.id));
-    candidate.projects = candidate.projects.filter(p=>p.id!=='coolcity' && !/cool\s*city/i.test(p.titleEn||''));
-    candidate.awards = candidate.awards.filter(a=>candidate.projects.some(p=>p.id===a.projectId));
+    const cloudProjectIds = new Set(candidate.projects.map(p=>p.id));
+    const cloudAwardIds = new Set(candidate.awards.map(a=>a.id));
     for (const p of bundledContent.projects) if (!cloudProjectIds.has(p.id)) candidate.projects.push(p);
     for (const a of bundledContent.awards) if (!cloudAwardIds.has(a.id)) candidate.awards.push(a);
     content = candidate;
