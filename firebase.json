@@ -1,4 +1,31 @@
 {
-  "firestore": {"rules": "firestore.rules", "indexes": "firestore.indexes.json"},
-  "emulators": {"firestore": {"port": 8080}, "auth": {"port": 9099}, "ui": {"enabled": true}}
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8080
+    },
+    "auth": {
+      "port": 9099
+    },
+    "ui": {
+      "enabled": true
+    }
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "notes-share",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.log"
+      ]
+    }
+  ]
 }

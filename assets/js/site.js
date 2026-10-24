@@ -4,15 +4,15 @@
   const root = document.getElementById('tanji-approved-preview');
   const app = root.querySelector('.preview-app');
   const C = window.TanjiCore;
-  const bundledContent = C.toPublic(window.TANJI_SEED);
-  let content = bundledContent;
-  const state = {page:'home',lang:'zh',category:'all',projectsPage:1,awardsPage:1};
-  const routes = new Set(['home','about','topics','projects','contact']);
+  let content = C.toPublic(window.TANJI_SEED);
+  const state = {page:'home',lang:'zh',category:'all',projectsPage:1,awardsPage:1,notes:[],noteCategories:[],notesPage:1,noteCategory:'all',noteSearch:'',noteTag:'',notesLoading:true};
+  const routes = new Set(['home','about','topics','projects','notes','contact']);
   let sending = false;
   try { state.lang = localStorage.getItem('tanji-lang') === 'en' ? 'en' : 'zh'; } catch {}
   function route() {
-    const name = (location.hash || '#/home').slice(2).split('/')[0];
-    state.page = routes.has(name) ? name : 'missing';
+    const parts=(location.hash || '#/home').slice(2).split('/'),name=parts[0];
+    state.page = name==='notes'&&parts[1]?'note':routes.has(name)?name:'missing';
+    try{state.noteId=decodeURIComponent(parts[1]||'');}catch{state.noteId='';}
   }
   function syncCarousel() {
     const track = root.querySelector('.ta-track');
@@ -23,21 +23,23 @@
     right.disabled = track.scrollLeft >= track.scrollWidth - track.clientWidth - 2;
   }
   function render() {
-    let view;
-    try { view = window.TanjiUI.renderPublic(content,state); }
-    catch (error) {
-      console.error('TanJi published content rendering failed; restoring bundled projects:',error);
-      content = bundledContent;
-      view = window.TanjiUI.renderPublic(content,state);
-    }
+    const view = window.TanjiUI.renderPublic(content,state);
     app.innerHTML = view.html;
     root.lang = document.documentElement.lang = state.lang === 'zh' ? 'zh-Hant' : 'en';
     document.title = view.title;
     document.querySelector('meta[name="description"]').content = view.description;
+    for(const [key,value]of [['og:title',view.title],['og:description',view.description],['og:image',view.image||'']]){let meta=document.querySelector('meta[property="'+key+'"]');if(!meta){meta=document.createElement('meta');meta.setAttribute('property',key);document.head.append(meta);}meta.content=value;}
+    root.querySelectorAll('.note-body img,.note-cover').forEach(img=>img.addEventListener('error',()=>{img.hidden=true;if(!img.parentElement.querySelector('.image-format-hint')){const hint=document.createElement('p');hint.className='image-format-hint';hint.textContent=state.lang==='zh'?'此圖片格式無法在這個瀏覽器顯示。':'This image format cannot be displayed in this browser.';const a=document.createElement('a');a.href=img.src;a.target='_blank';a.rel='noopener noreferrer';a.textContent=state.lang==='zh'?'開啟原始檔案↗':'Open original file↗';hint.append(' ',a);img.after(hint);}}));
+    root.querySelectorAll('.note-body video').forEach(video=>video.addEventListener('error',()=>{let hint=video.parentElement.querySelector('.media-error');if(!hint){hint=document.createElement('p');hint.className='media-error';hint.textContent=state.lang==='zh'?'此瀏覽器無法播放這個影片格式，請使用原始檔案連結。':'This browser cannot play this format. Please use the original-file link.';video.after(hint);}}));
     root.querySelector('.ta-track')?.addEventListener('scroll',syncCarousel,{passive:true});
     requestAnimationFrame(syncCarousel);
   }
-  root.addEventListener('click',event => {
+  root.addEventListener('click',async event => {
+    const filter=event.target.closest('[data-note-category]');if(filter){state.noteCategory=filter.dataset.noteCategory;state.notesPage=1;render();return;}
+    const notesPage=event.target.closest('[data-notes-page]');if(notesPage){state.notesPage=Number(notesPage.dataset.notesPage);render();root.querySelector('#notes-results')?.scrollIntoView({block:'start'});return;}
+    const tag=event.target.closest('[data-note-tag]');if(tag){state.noteTag=tag.dataset.noteTag;state.noteCategory='all';state.noteSearch='';state.notesPage=1;location.hash='#/notes';return;}
+    if(event.target.closest('[data-clear-note-tag]')){state.noteTag='';render();return;}
+    const share=event.target.closest('[data-share-note],[data-copy-note]');if(share){const note=state.notes.find(n=>n.id===(share.dataset.shareNote||share.dataset.copyNote));if(!note)return;const url=window.TanjiNotes.shareUrl(note,content.settings,state.lang),status=root.querySelector('.note-share-status');try{if(share.hasAttribute('data-share-note')&&navigator.share)await navigator.share({title:window.TanjiNotes.text(note,'title',state.lang),url});else if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(url);status.textContent=state.lang==='zh'?'連結已複製':'Link copied';}else{status.textContent=url;}}catch(e){if(e.name!=='AbortError')status.textContent=url;}return;}
     if (event.target.closest('#language')) {
       state.lang = state.lang === 'zh' ? 'en' : 'zh';
       try { localStorage.setItem('tanji-lang',state.lang); } catch {}
@@ -65,6 +67,7 @@
     }
   });
   root.addEventListener('submit',async event => {
+    if(event.target.matches('.notes-search')){event.preventDefault();state.noteSearch=String(new FormData(event.target).get('q')||'');state.notesPage=1;render();return;}
     if (!event.target.matches('.contact-form')) return;
     event.preventDefault();
     const form = event.target;
@@ -96,25 +99,11 @@
   window.addEventListener('hashchange',()=>{route();state.projectsPage=1;render();window.scrollTo({top:0,behavior:'instant'});});
   window.addEventListener('resize',syncCarousel);
   route(); render();
+  if(location.protocol!=='file:'&&window.TanjiCloud.loadNotes)window.TanjiCloud.loadNotes().then(data=>{state.notes=data.notes;state.noteCategories=data.categories;state.notesLoading=false;if(state.page!=='contact'&&!sending)render();}).catch(error=>{state.notesLoading=false;if(state.page==='note')render();console.info('TanJi notes unavailable:',error?.code||'offline');});
   // Render bundled content immediately. Published Firebase content wins when available.
   if (location.protocol !== 'file:') window.TanjiCloud.loadPublic().then(remote=>{
     if (!remote) return;
-    // Keep the last known-good projects if an incomplete publish hides them.
-    // Never silently substitute an empty or unrelated cloud portfolio.
-    let candidate;
-    try { candidate = C.toPublic(remote.content); }
-    catch (error) { console.warn('TanJi rejected invalid published content:',error); return; }
-    // A newly published project must not be rejected merely because it has no award yet.
-    // Preserve existing bundled entries when a partial cloud publish omits them.
-    if (!Array.isArray(candidate.projects) || !Array.isArray(candidate.awards)) {
-      console.warn('TanJi rejected incomplete published portfolio.');
-      return;
-    }
-    const cloudProjectIds = new Set(candidate.projects.map(p=>p.id));
-    const cloudAwardIds = new Set(candidate.awards.map(a=>a.id));
-    for (const p of bundledContent.projects) if (!cloudProjectIds.has(p.id)) candidate.projects.push(p);
-    for (const a of bundledContent.awards) if (!cloudAwardIds.has(a.id)) candidate.awards.push(a);
-    content = candidate;
+    content = C.toPublic(remote.content);
     // Do not replace a form while a visitor is typing or sending it.
     if (state.page !== 'contact' && !sending) render();
   }).catch(error=>console.info('TanJi uses bundled content:',error?.code||'offline'));

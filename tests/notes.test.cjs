@@ -1,0 +1,24 @@
+'use strict';
+const {JSDOM}=require('jsdom');const fs=require('node:fs');const assert=require('node:assert/strict');const path=require('node:path');
+const root=path.resolve(__dirname,'..');
+const dom=new JSDOM('<!doctype html><body>',{runScripts:'outside-only',url:'https://tanji.tw/index.html'}),w=dom.window;w.TextEncoder=TextEncoder;
+for(const name of ['data/content.js','assets/js/core.js','assets/vendor/purify.min.js','assets/js/notes.js','assets/js/notes-views.js','assets/js/views.js'])w.eval(fs.readFileSync(path.join(root,name),'utf8'));
+const N=w.TanjiNotes,C=w.TanjiCore,seed=w.TANJI_SEED;
+const dirty='<script>alert(1)</script><img src="javascript:alert(1)" onerror="alert(1)"><p style="position:fixed;text-align:center">text</p><iframe src="https://evil.example"></iframe><a href="data:text/html,bad">bad</a><svg onload="alert(1)"></svg>';
+const clean=N.sanitize(dirty);assert(!/script|onerror|onload|javascript:|position:|evil.example|data:text/i.test(clean));assert(clean.includes('text-align: center'));
+const media=N.sanitize('<table><tr><th>A</th><td>B</td></tr></table><figure style="width:50%"><video src="https://example.org/video.mp4" controls></video><figcaption>Caption</figcaption></figure>');assert(media.includes('<table>'));assert(media.includes('controls'));assert(media.includes('width: 50%'));
+assert.equal(N.youtube('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ');assert.equal(N.youtube('https://evil.example/watch?v=dQw4w9WgXcQ'),'');
+for(const [name,kind]of [['photo.heic','image'],['photo.tiff','image'],['photo.avif','image'],['movie.MP4','video'],['movie.mov','video'],['movie.webm','video'],['movie.mkv','video']])assert.equal(N.fileInfo({name,size:1024,type:''}).kind,kind);
+assert.throws(()=>N.fileInfo({name:'evil.exe',size:1024,type:''}));assert.throws(()=>N.fileInfo({name:'large.mp4',size:501*1024*1024}));
+const note=N.validate({id:'my-note',titleZh:'我的筆記',titleEn:'',bodyZh:'<p>我對新聞的觀察</p>',bodyEn:'',author:'Coco',format:'note',tags:['氣候','氣候'],publishedAt:'2026-10-24T12:00:00Z'},true);assert.equal(note.tags.length,1);assert.throws(()=>N.validate({...note,format:'news'},true));
+const news=N.validate({...note,format:'news',sourceTitle:'新聞標題',sourceName:'來源媒體',sourceUrl:'https://example.org/news'},true);assert(N.sourceHTML(news,'zh').includes('閱讀原文↗'));
+const categories=[{id:'climate',titleZh:'氣候與環境',titleEn:'Climate',order:1}];const notes=Array.from({length:12},(_,i)=>({...note,id:'note-'+i,titleZh:'筆記 '+i,categoryId:i%2?'climate':'other',publishedAt:new Date(Date.UTC(2026,9,1+i)).toISOString(),tags:['測試']}));
+const rendered=w.TanjiUI.renderPublic(C.toPublic(seed),{page:'notes',lang:'zh',notes,noteCategories:categories,notesPage:1});assert.equal((rendered.html.match(/class="note-card"/g)||[]).length,9);
+const filtered=N.views.list(notes,categories,{lang:'zh',noteCategory:'climate'});assert.equal((filtered.match(/class="note-card"/g)||[]).length,6);
+assert(N.views.list(notes,categories,{lang:'zh',noteSearch:'筆記 11'}).includes('1 篇筆記'));
+const detail=N.views.detail(news,[news],categories,'en');assert(detail.includes('我的筆記'));assert(detail.includes('Share'));assert(!detail.includes('undefined'));
+assert.equal(N.shareUrl(note,{notesShareBase:'https://example.org/shareNote'}),'https://example.org/shareNote/my-note');assert(N.shareUrl(note,{}).endsWith('#/notes/my-note'));
+const about=w.TanjiUI.renderPublic(C.toPublic(seed),{page:'about',lang:'zh'}).html;assert(about.includes('創辦人介紹'));assert(about.includes('Coco'));assert(!about.includes('創辦人的話'));assert(!about.includes(seed.settings.aboutZh));
+// Deletion removes dependent awards and records a tombstone; seed data cannot reappear accidentally.
+const work=seed.projects.find(p=>seed.awards.some(a=>a.projectId===p.id)),removed=C.removeRecord(seed,'projects',work.id);assert(!removed.projects.some(p=>p.id===work.id));assert(!removed.awards.some(a=>a.projectId===work.id));assert(removed.settings.deletedRecords.projects.includes(work.id));removed.projects.push(work);assert(!C.cleanContent(removed).projects.some(p=>p.id===work.id));assert(seed.projects.some(p=>p.id===work.id));
+console.log('PASS: notes rendering/filter/search/pagination, original-language fallback, safe HTML/media, news source, file types/limits, founder, deletion compatibility.');dom.window.close();

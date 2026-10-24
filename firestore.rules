@@ -66,6 +66,53 @@ service cloud.firestore {
         && request.resource.data.status in ['new','read'];
       allow delete: if false;
     }
+    // Separate collections preserve the existing site/public and history schema.
+    function validNote() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['id','titleZh','titleEn','summaryZh','summaryEn','bodyZh','bodyEn','author','format','categoryId','tags','cover','coverAlt','sourceTitle','sourceName','sourceDate','sourceUrl','publishedAt','createdAt','revision','status','updatedAt','updatedBy'])
+        && d.keys().hasAll(['id','titleZh','titleEn','bodyZh','bodyEn','author','format','categoryId','tags','revision','status','updatedAt','updatedBy'])
+        && d.id is string && d.id.matches('^[a-zA-Z0-9_-]{1,80}$')
+        && d.titleZh is string && d.titleZh.size() <= 200
+        && d.titleEn is string && d.titleEn.size() <= 200
+        && d.bodyZh is string && d.bodyZh.size() <= 700000
+        && d.bodyEn is string && d.bodyEn.size() <= 700000
+        && d.author is string && d.author.size() <= 100
+        && d.categoryId is string && d.tags is list && d.tags.size() <= 15
+        && d.format in ['note','article','news'] && d.status in ['draft','published']
+        && d.revision is int && d.revision > 0
+        && d.updatedAt == request.time && d.updatedBy == request.auth.token.email;
+    }
+    match /noteDrafts/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && validNote() && request.resource.data.id == id && request.resource.data.revision == 1;
+      allow update: if isAdmin() && validNote() && request.resource.data.id == id
+        && request.resource.data.revision == resource.data.revision + 1;
+      allow delete: if false;
+    }
+    match /notes/{id} {
+      allow read: if isAdmin() || resource.data.status == 'published';
+      allow create, update: if isAdmin() && validNote() && request.resource.data.id == id
+        && request.resource.data.status == 'published';
+      allow delete: if isAdmin();
+    }
+    match /noteCategories/{id} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['titleZh','titleEn','order','archived'])
+        && request.resource.data.titleZh is string && request.resource.data.titleZh.size() > 0 && request.resource.data.titleZh.size() <= 80
+        && request.resource.data.titleEn is string && request.resource.data.titleEn.size() <= 80
+        && request.resource.data.order is number && request.resource.data.archived is bool;
+      allow delete: if false;
+    }
+    match /media/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && request.resource.data.keys().hasOnly(['id','name','url','path','kind','mime','size','createdAt'])
+        && request.resource.data.id == id && request.resource.data.kind in ['image','video']
+        && request.resource.data.url is string && request.resource.data.path is string
+        && request.resource.data.name is string && request.resource.data.size is number
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
     match /{document=**} { allow read, write: if false; }
   }
 }

@@ -8,9 +8,9 @@ async function checkSubmission(fails) {
   let reset = false, writes = 0;
   const button = {disabled:false};
   const result = {textContent:'',setAttribute(){}};
-  const form = {matches:()=>true,reportValidity:()=>true,reset(){reset=true;},querySelector:s=>s==='[type="submit"]'?button:result};
+  const form = {matches:s=>s==='.contact-form',reportValidity:()=>true,reset(){reset=true;},querySelector:s=>s==='[type="submit"]'?button:result};
   const app = {innerHTML:''};
-  const root = {querySelector:s=>s==='.preview-app'?app:null,lang:'',addEventListener:(k,f)=>events[k]=f};
+  const root = {querySelectorAll:()=>[],querySelector:s=>s==='.preview-app'?app:null,lang:'',addEventListener:(k,f)=>events[k]=f};
   const scope = {
     URL,TextEncoder,location:{hash:'#/contact',protocol:'file:'},
     document:{getElementById:()=>root,documentElement:{},querySelector:()=>({content:''})},
@@ -25,6 +25,6 @@ async function checkSubmission(fails) {
   assert.equal(writes,1);
   assert.equal(reset,!fails);
   assert.equal(button.disabled,false);
-  assert(result.textContent.includes(fails?'未送出':'已送出'));
+  assert(result.textContent.includes(fails?'未送出':'已收到'));
 }
 (async()=>{await checkSubmission(false);await checkSubmission(true);console.log('PASS: contact clears only after confirmed write; failed delivery retains input and reports failure.');})().catch(error=>{console.error(error);process.exitCode=1;});

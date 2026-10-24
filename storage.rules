@@ -1,0 +1,20 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'tanji2026@gmail.com'
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+    match /media/{file} {
+      // Article media is accessible by URL, including files uploaded for drafts.
+      allow read: if true;
+      allow create: if isAdmin() && request.resource.size > 0
+        && ((request.resource.contentType.matches('image/.*') && request.resource.size <= 25 * 1024 * 1024)
+          || (request.resource.contentType.matches('video/.*') && request.resource.size <= 500 * 1024 * 1024));
+      allow update, delete: if false;
+    }
+    match /{path=**} { allow read, write: if false; }
+  }
+}
