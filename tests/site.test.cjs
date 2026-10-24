@@ -68,3 +68,14 @@ for(const lang of ['zh','en']){
  assert.equal(homeFirst,pageFirst);
  if(lang==='zh')assert.equal(homeFirst,'最新作品排序測試');
 }
+
+// Published social settings are displayed in Contact and nowhere else.
+const social=JSON.parse(JSON.stringify(content));social.settings.youtube='https://www.youtube.com/@TanJi_2026';
+for(const lang of ['zh','en']){
+ const contactHtml=UI.renderPublic(social,{page:'contact',lang}).html;
+ assert.equal((contactHtml.match(/href="https:\/\/www.youtube.com\/@TanJi_2026"/g)||[]).length,1);
+ assert(contactHtml.indexOf('contact-social')>contactHtml.indexOf('</form>'));
+ assert(contactHtml.includes('rel="noopener noreferrer"'));
+ for(const page of ['home','about','topics','projects'])assert(!UI.renderPublic(social,{page,lang}).html.includes('href="https://www.youtube.com/@TanJi_2026"'));
+}
+assert(!render('contact').includes('class="contact-social"'));
