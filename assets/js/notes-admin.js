@@ -1,13 +1,35 @@
 /* Visual notes editor and media library; does not alter legacy site content. */
 (function(){'use strict';
 const C=window.TanjiCore,N=window.TanjiNotes,cloud=window.TanjiCloud,E=C.esc;
-const S={notes:[],categories:[],media:[],loaded:false,loading:false,error:'',tab:'notes',query:''};
+const loadState=()=>({status:'idle',error:'',generation:0});
+const S={notes:[],categories:[],media:[],loads:{notes:loadState(),media:loadState()},tab:'notes',query:''};
 let api=null,editing=null,dirty=false,busy=false,activeLang='zh',savedRange=null,pickerTarget='body',notice='',localTimer;
 const field=(key,label,value='',type='text',extra='')=>`<label class="field"><span>${E(label)}</span><input name="${key}" type="${type}" value="${E(value)}" ${extra}></label>`;
-function panel(tab,bridge){api=bridge;S.tab=tab;if(!S.loaded&&!S.loading){S.loading=true;Promise.all([cloud.loadNotesAdmin(),cloud.listMedia().catch(()=>[])]).then(([data,media])=>{S.notes=data.notes;S.categories=data.categories;S.media=media;S.loaded=true;S.error='';}).catch(error=>{S.error=cloud.errorMessage(error);}).finally(()=>{S.loading=false;api.render();});}
- let html=`<div id="notes-admin"><div class="admin-panel-head"><div><h2>${{notes:'碳吉筆記',noteCategories:'筆記分類',media:'媒體管理'}[tab]}</h2><p>筆記獨立儲存，不需按頁首的「發布網站內容」。</p></div><button class="small-btn" data-n-action="reload">重新讀取</button></div>${notice?`<p class="admin-message" role="status">${E(notice)}</p>`:''}`;
- if(S.loading)return html+'<p role="status">正在讀取筆記與媒體…</p></div>';
- if(S.error)return html+`<p class="admin-message error">${E(S.error)}</p></div>`;
+const resourceFor=tab=>tab==='media'?'media':'notes';
+function withTimeout(task){let timer;const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('讀取超過 12 秒，請檢查網路後按「重新讀取」。')),12000);});return Promise.race([task,deadline]).finally(()=>clearTimeout(timer));}
+function invalidate(kind){const r=S.loads[kind];r.generation++;r.status='idle';r.error='';}
+function ensureLoaded(kind){
+ const r=S.loads[kind];if(r.status!=='idle')return;
+ const generation=++r.generation;r.status='loading';r.error='';
+ const task=Promise.resolve().then(()=>kind==='media'?cloud.listMedia():cloud.loadNotesAdmin());
+ withTimeout(task).then(data=>{
+  if(r.generation!==generation)return;
+  if(kind==='media'){if(!Array.isArray(data))throw Error('媒體資料格式不正確，請重新讀取。');S.media=data;}
+  else{if(!Array.isArray(data?.notes)||!Array.isArray(data?.categories))throw Error('筆記資料格式不正確，請重新讀取。');S.notes=data.notes;S.categories=data.categories;}
+  r.status='ready';
+ }).catch(error=>{
+  if(r.generation!==generation)return;
+  r.status='error';r.error=cloud.errorMessage(error);
+ }).finally(()=>{
+  if(r.generation!==generation)return;
+  const picker=document.getElementById('media-picker');if(kind==='media'&&picker?.open)renderMediaPicker(picker);
+  api?.render();
+ });
+}
+function panel(tab,bridge){api=bridge;S.tab=tab;const kind=resourceFor(tab),resource=S.loads[kind];ensureLoaded(kind);
+ let html=`<div id="notes-admin"><div class="admin-panel-head"><div><h2>${{notes:'碳吉筆記',noteCategories:'筆記分類',media:'媒體管理'}[tab]}</h2><p>筆記獨立儲存，不需按頁首的「發布網站內容」。</p></div><button class="small-btn" data-n-action="reload" ${resource.status==='loading'?'disabled':''}>${resource.status==='loading'?'讀取中…':'重新讀取'}</button></div>${notice?`<p class="admin-message" role="status">${E(notice)}</p>`:''}`;
+ if(resource.status==='loading')return html+`<p role="status">${kind==='media'?'正在讀取媒體…':'正在讀取筆記與分類…'}</p></div>`;
+ if(resource.status==='error')return html+`<p class="admin-message error" role="alert">${E(resource.error)}</p><p class="admin-help">其他後台頁面仍可使用。請排除錯誤後按「重新讀取」，此頁不會持續自動重試。</p></div>`;
  if(tab==='notes'){
   html+=`<div class="notes-admin-tools"><button class="btn primary" data-n-action="new">新增筆記</button><button class="btn" data-n-action="backup">匯出筆記備份</button><label class="btn">匯入筆記備份<input type="file" id="notes-import" accept=".json,application/json" hidden></label><button class="btn" data-n-action="recover">還原本機未儲存筆記</button></div><label class="field"><span>搜尋文章</span><input id="admin-note-query" type="search" value="${E(S.query)}" placeholder="標題、分類或標籤"></label><div class="admin-list">`;
   const rows=N.sorted(S.notes).filter(n=>[n.titleZh,n.titleEn,...n.tags||[]].join(' ').toLowerCase().includes(S.query.toLowerCase()));
@@ -41,7 +63,8 @@ function tableAction(action){const table=selectedTable();if(!table){error('請�
  if(action==='delete-row'&&row){if(table.rows.length===1)table.remove();else row.remove();}
  if(action==='delete-column'&&cell){if(row.cells.length===1)table.remove();else{const index=cell.cellIndex;for(const r of table.rows)r.cells[index]?.remove();}}setDirty();}
 async function upload(files,target){if(busy)return;const progress=document.getElementById(target==='library'?'library-progress':'note-upload-progress');busy=true;const buttons=document.querySelectorAll('#note-editor-form button');buttons.forEach(b=>b.disabled=true);const lang=activeLang;try{for(const file of files){if(target==='cover'&&N.fileInfo(file).kind!=='image')throw Error('封面請選擇圖片。');const m=await cloud.uploadMedia(file,p=>{if(progress)progress.textContent='正在上傳 '+file.name+' · '+p+'%';});S.media.unshift(m);if(target==='cover'){if(m.kind!=='image')throw Error('封面請選擇圖片。');document.querySelector('[name="cover"]').value=m.url;setDirty();}else if(target==='body'){activeLang=lang;insert(N.mediaHTML(m));}if(progress)progress.textContent='已上傳 '+file.name+'。若瀏覽器不支援此格式，可使用原始檔案連結。';}if(target==='library')api.render();}catch(e){if(progress)progress.textContent=cloud.errorMessage(e);}finally{busy=false;buttons.forEach(b=>b.disabled=false);}}
-function pickMedia(target){pickerTarget=target;const d=dialog('media-picker');d.innerHTML=`<div class="dialog-head"><h2>選擇媒體</h2><button class="close-dialog" data-close-media aria-label="關閉">×</button></div><div class="dialog-body media-library">${mediaCards(true)}</div>`;d.showModal();}
+function renderMediaPicker(d){const r=S.loads.media;const content=r.status==='ready'?'<div class="media-library">'+mediaCards(true)+'</div>':r.status==='error'?'<p class="admin-message error" role="alert">'+E(r.error)+'</p><button class="small-btn" type="button" data-retry-picker>重新讀取媒體</button>':'<p role="status">正在讀取媒體…</p>';d.innerHTML='<div class="dialog-head"><h2>選擇媒體</h2><button class="close-dialog" type="button" data-close-media aria-label="關閉">×</button></div><div class="dialog-body">'+content+'</div>';}
+function pickMedia(target){pickerTarget=target;const d=dialog('media-picker');ensureLoaded('media');renderMediaPicker(d);d.showModal();}
 function openCategory(id){const c=S.categories.find(x=>x.id===id)||{id:'category-'+Date.now().toString(36),titleZh:'',titleEn:'',order:C.nextOrder(S.categories),archived:false};const d=dialog('note-category-dialog');d.innerHTML=`<form id="note-category-form" method="dialog"><div class="dialog-head"><h2>${id?'編輯':'新增'}分類</h2></div><div class="dialog-body"><input name="id" value="${E(c.id)}" type="hidden"><div class="form-grid">${field('titleZh','中文名稱',c.titleZh,'text','required maxlength="80"')}${field('titleEn','英文名稱（選填）',c.titleEn,'text','maxlength="80"')}${field('order','排序',c.order,'number')}<label class="check-field"><input type="checkbox" name="archived" ${c.archived?'checked':''}>停用分類（既有文章保留分類名稱）</label></div><p class="form-error" role="alert"></p></div><div class="dialog-footer"><button type="button" class="btn" data-close-category>取消</button><button class="btn primary" type="submit">儲存分類</button></div></form>`;d.showModal();}
 function download(name,data){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 async function save(publishing){if(busy)return;try{const n=N.validate(collect(),publishing);busy=true;document.querySelectorAll('#note-editor-form button').forEach(b=>b.disabled=true);const saved=await cloud.saveNote(n,publishing);S.notes=S.notes.filter(x=>x.id!==saved.id);S.notes.unshift(saved);dirty=false;clearTimeout(localTimer);sessionStorage.removeItem('tanji-note-local');document.getElementById('note-editor').close();editing=null;notice=publishing?'文章已發布。':'文章草稿已儲存，公開版本保持不變。';api.render();}catch(e){error(cloud.errorMessage(e));}finally{busy=false;document.querySelectorAll('#note-editor-form button').forEach(b=>b.disabled=false);}}
@@ -56,12 +79,13 @@ document.addEventListener('click',async e=>{
  const el=e.target.closest('button,a');if(!el)return;
  if(el.hasAttribute('data-n-close')){if(busy)return;if(dirty&&!confirm('有尚未儲存的筆記，確定關閉？'))return;document.getElementById('note-editor').close();editing=null;return;}
  if(el.hasAttribute('data-close-media')){document.getElementById('media-picker').close();return;}
+ if(el.hasAttribute('data-retry-picker')){if(S.loads.media.status!=='loading'){invalidate('media');ensureLoaded('media');renderMediaPicker(document.getElementById('media-picker'));}return;}
  if(el.hasAttribute('data-close-category')){document.getElementById('note-category-dialog').close();return;}
  if(busy)return;
- if(el.dataset.nAction){switch(el.dataset.nAction){case 'reload':S.loaded=false;S.error='';api.render();break;case 'new':openNote();break;case 'new-category':openCategory();break;case 'backup':download('tanji-notes-backup-'+new Date().toISOString().slice(0,10)+'.json',{projectId:'tanji-official-1219f',exportedAt:new Date().toISOString(),notes:S.notes,categories:S.categories,media:S.media});break;case 'recover':try{const raw=sessionStorage.getItem('tanji-note-local');if(!raw){notice='目前沒有本機未儲存的筆記。';api.render();}else{openNote(JSON.parse(raw));dirty=true;}}catch{notice='無法還原本機筆記。';api.render();}break;}return;}
+ if(el.dataset.nAction){switch(el.dataset.nAction){case 'reload':if(S.loads[resourceFor(S.tab)].status!=='loading'){invalidate(resourceFor(S.tab));api.render();}break;case 'new':openNote();break;case 'new-category':openCategory();break;case 'backup':download('tanji-notes-backup-'+new Date().toISOString().slice(0,10)+'.json',{projectId:'tanji-official-1219f',exportedAt:new Date().toISOString(),notes:S.notes,categories:S.categories,media:S.media});break;case 'recover':try{const raw=sessionStorage.getItem('tanji-note-local');if(!raw){notice='目前沒有本機未儲存的筆記。';api.render();}else{openNote(JSON.parse(raw));dirty=true;}}catch{notice='無法還原本機筆記。';api.render();}break;}return;}
  if(el.dataset.nEdit){openNote(S.notes.find(n=>n.id===el.dataset.nEdit));return;}
  if(el.dataset.nCategory){openCategory(el.dataset.nCategory);return;}
- if(el.dataset.nUnpublish){if(!confirm('確定下架這篇筆記？文章草稿與媒體會保留，讀者將無法再從官網閱讀。'))return;el.disabled=true;try{await cloud.unpublishNote(el.dataset.nUnpublish);S.loaded=false;notice='筆記已下架。';api.render();}catch(err){notice=cloud.errorMessage(err);el.disabled=false;api.render();}return;}
+ if(el.dataset.nUnpublish){if(!confirm('確定下架這篇筆記？文章草稿與媒體會保留，讀者將無法再從官網閱讀。'))return;el.disabled=true;try{await cloud.unpublishNote(el.dataset.nUnpublish);invalidate('notes');notice='筆記已下架。';api.render();}catch(err){notice=cloud.errorMessage(err);el.disabled=false;api.render();}return;}
  if(el.dataset.copyMedia){const m=S.media.find(x=>x.id===el.dataset.copyMedia);try{await navigator.clipboard.writeText(m.url);el.textContent='已複製';}catch{notice=m.url;api.render();}return;}
  if(el.dataset.pickMedia){const m=S.media.find(x=>x.id===el.dataset.pickMedia);if(pickerTarget==='cover'){if(m.kind!=='image'){alert('封面請選擇圖片。');return;}document.querySelector('#note-editor-form [name="cover"]').value=m.url;setDirty();}else insert(N.mediaHTML(m));document.getElementById('media-picker').close();return;}
  if(!el.closest('#note-editor'))return;
@@ -80,5 +104,5 @@ document.addEventListener('click',async e=>{
  if(el.hasAttribute('data-note-preview')){const n=N.validate(collect(),false),d=dialog('note-preview');d.innerHTML='<div class="dialog-head"><h2>文章預覽</h2><button type="button" class="close-dialog" id="close-note-preview" aria-label="關閉預覽">×</button></div><article class="dialog-body"><h1>'+E(N.text(n,'title',activeLang)||'未命名筆記')+'</h1><p>'+E(n.author)+'</p>'+N.sourceHTML(n,activeLang)+'<div class="note-body">'+N.sanitize(N.text(n,'body',activeLang))+'</div></article>';d.querySelector('#close-note-preview').onclick=()=>d.close();d.showModal();return;}
 });
 window.addEventListener('beforeunload',e=>{if(dirty||busy){e.preventDefault();e.returnValue='';}});
-window.TanjiNotesAdmin={panel,reset(){S.loaded=false;S.notes=[];S.categories=[];S.media=[];editing=null;dirty=false;for(const id of ['note-editor','media-picker','note-preview','note-category-dialog'])document.getElementById(id)?.close();}};
+window.TanjiNotesAdmin={panel,reset(){invalidate('notes');invalidate('media');S.notes=[];S.categories=[];S.media=[];editing=null;dirty=false;for(const id of ['note-editor','media-picker','note-preview','note-category-dialog'])document.getElementById(id)?.close();}};
 })();

@@ -2,7 +2,7 @@
   "name": "tanji-official",
   "private": true,
   "scripts": {
-    "test": "node tests/site.test.cjs && node tests/contact.test.cjs && node tests/notes.test.cjs && node tests/admin-notes.test.cjs && node tests/content-compat.test.cjs",
+    "test": "node tests/site.test.cjs && node tests/contact.test.cjs && node tests/notes.test.cjs && node tests/admin-notes.test.cjs && node tests/content-compat.test.cjs && node tests/admin-loading.test.cjs",
     "build:content": "node scripts/build-content.mjs",
     "test:share": "node tests/share.test.cjs"
   },
