@@ -4,7 +4,8 @@
   const root = document.getElementById('tanji-approved-preview');
   const app = root.querySelector('.preview-app');
   const C = window.TanjiCore;
-  let content = C.toPublic(window.TANJI_SEED);
+  const bundledContent=C.toPublic(window.TANJI_SEED);
+  let content=bundledContent,lastGoodContent=bundledContent;
   const state = {page:'home',lang:'zh',category:'all',projectsPage:1,awardsPage:1,notes:[],noteCategories:[],notesPage:1,noteCategory:'all',noteSearch:'',noteTag:'',notesLoading:true};
   const routes = new Set(['home','about','topics','projects','notes','contact']);
   let sending = false;
@@ -23,7 +24,8 @@
     right.disabled = track.scrollLeft >= track.scrollWidth - track.clientWidth - 2;
   }
   function render() {
-    const view = window.TanjiUI.renderPublic(content,state);
+    let view;
+    try{view=window.TanjiUI.renderPublic(content,state);lastGoodContent=content;}catch(error){console.error('TanJi content rendering failed; keeping the last complete page:',error);content=lastGoodContent;view=window.TanjiUI.renderPublic(content,state);}
     app.innerHTML = view.html;
     root.lang = document.documentElement.lang = state.lang === 'zh' ? 'zh-Hant' : 'en';
     document.title = view.title;
@@ -103,7 +105,7 @@
   // Render bundled content immediately. Published Firebase content wins when available.
   if (location.protocol !== 'file:') window.TanjiCloud.loadPublic().then(remote=>{
     if (!remote) return;
-    content = C.toPublic(remote.content);
+    content = C.toPublic(C.mergeContent(bundledContent,remote.content));
     // Do not replace a form while a visitor is typing or sending it.
     if (state.page !== 'contact' && !sending) render();
   }).catch(error=>console.info('TanJi uses bundled content:',error?.code||'offline'));
