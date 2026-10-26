@@ -27,7 +27,7 @@ function ensureLoaded(kind){
  });
 }
 function panel(tab,bridge){api=bridge;S.tab=tab;const kind=resourceFor(tab),resource=S.loads[kind];ensureLoaded(kind);
- let html=`<div id="notes-admin"><div class="admin-panel-head"><div><h2>${{notes:'碳吉筆記',noteCategories:'筆記分類',media:'媒體管理'}[tab]}</h2><p>筆記獨立儲存；發布文章不會寄信。已發布文章可至「電子報管理」選擇收錄。</p></div><button class="small-btn" data-n-action="reload" ${resource.status==='loading'?'disabled':''}>${resource.status==='loading'?'讀取中…':'重新讀取'}</button></div>${notice?`<p class="admin-message" role="status">${E(notice)}</p>`:''}`;
+ let html=`<div id="notes-admin"><div class="admin-panel-head"><div><h2>${{notes:'碳吉筆記',noteCategories:'筆記分類',media:'媒體管理'}[tab]}</h2><p>筆記獨立儲存；發布文章不會寄信。本週已發布文章會自動整理到「電子報管理」，確認後才寄送。</p></div><button class="small-btn" data-n-action="reload" ${resource.status==='loading'?'disabled':''}>${resource.status==='loading'?'讀取中…':'重新讀取'}</button></div>${notice?`<p class="admin-message" role="status">${E(notice)}</p>`:''}`;
  if(resource.status==='loading')return html+`<p role="status">${kind==='media'?'正在讀取媒體…':'正在讀取筆記與分類…'}</p></div>`;
  if(resource.status==='error')return html+`<p class="admin-message error" role="alert">${E(resource.error)}</p><p class="admin-help">其他後台頁面仍可使用。請排除錯誤後按「重新讀取」，此頁不會持續自動重試。</p></div>`;
  if(tab==='notes'){

@@ -40,6 +40,66 @@ function createNewsletterService({db, sendMail, now = Date.now, projectId = 'tan
     if (!/^[a-f0-9]{64}$/.test(record?.token || '')) return '';
     return timingSafeEqual(Buffer.from(record.token), Buffer.from(token)) ? record.email : '';
   }
+  async function automaticDigest(tx, range, owner) {
+    const query=db.collection('notes').where('status','==','published');
+    const published=tx?await tx.get(query):await query.get();
+    const candidates=published.docs.filter(doc=>{const at=M.publishedMillis(doc.data().publishedAt);return at>=range.startAtMs&&at<range.endAtMs;});
+    const records=tx?await txDocs(tx,candidates.map(doc=>articleRef(doc.id))):await getDocs(candidates.map(doc=>articleRef(doc.id)));
+    const items=candidates.filter((doc,i)=>!doc.data().newsletterSentAt && data(records[i])?.state!=='sent' && (!data(records[i])?.issueId||data(records[i]).issueId===owner))
+      .sort((a,b)=>M.publishedMillis(a.data().publishedAt)-M.publishedMillis(b.data().publishedAt)||a.id.localeCompare(b.id))
+      .map(doc=>M.sourceItem(doc.id,doc.data()));
+    if(items.length>M.MAX_ITEMS)M.fail('本週文章超過 30 篇，請先調整寄送容量；本期尚未寄送。',409);
+    return {subject:'本週碳吉筆記',intro:'',items,previewHash:M.hash(JSON.stringify(items.map(item=>item.sourceHash)))};
+  }
+  async function automaticState(input={}) {
+    const ranges=M.currentPeriods(now());
+    let range;
+    if(input.issueId){range=M.period(input.issueId);if(!ranges.some(r=>r.id===range.id))M.fail('請重新讀取本週電子報。',409);}
+    else {
+      const previous=data(await issueRef(ranges[0].id).get()), digest=await automaticDigest(null,ranges[0],ranges[0].id);
+      range=(previous&&!['sent','skipped','cancelled'].includes(previous.status)||digest.items.length)?ranges[0]:ranges[1];
+    }
+    const issue=data(await issueRef(range.id).get()), digest=await automaticDigest(null,range,range.id);
+    const started=!!issue?.audience;
+    const approved=issue?.mode==='automatic-week'&&issue.status==='approved'&&issue.approvalHash===digest.previewHash;
+    const view=started?issue:{...issue,id:range.id,revision:issue?.revision||0,status:approved?'approved':'draft',...digest,...range};
+    const snapshot=started?(issue.snapshot||digest):digest;
+    const mail=M.renderDigest(snapshot,{number:issue?.number});
+    return {issue:publicIssue(view),period:range,previewHash:digest.previewHash,html:mail.html,subject:mail.subject,
+      changed:!started&&issue?.status==='approved'&&!approved,
+      canApprove:!started&&digest.items.length>0&&(!approved||range.scheduledAtMs<=now()),
+      message:started?'本期已開始寄送，系統會沿用原期號處理。':approved?'本期已確認，等待週一上午 8 點寄送。':'尚未確認，本期不會正式寄出。'};
+  }
+  async function testAutomatic(input) {
+    const state=await automaticState(input);
+    if(state.previewHash!==input.previewHash)M.fail('文章已變更，請重新讀取預覽後再寄測試信。',409);
+    const issue=data(await issueRef(state.period.id).get());
+    const digest=issue?.audience?issue.snapshot:await automaticDigest(null,state.period,state.period.id);
+    if(!digest.items.length)M.fail('本週沒有可寄送的文章。',409);
+    const info=await sendMail({from:M.FROM,to:M.ADMIN,...M.renderDigest(digest,{number:issue?.number,test:true})});
+    if(!info?.accepted?.some(v=>M.emailAddress(v?.address||v)===M.ADMIN))M.fail('測試信尚未被郵件服務接受。',503);
+    return {message:'測試信已寄給管理員；本期尚未因測試而核准。'};
+  }
+  async function approveAutomatic(input) {
+    const range=M.period(input.issueId);
+    if(!M.currentPeriods(now()).some(r=>r.id===range.id))M.fail('請重新讀取本週電子報。',409);
+    await db.runTransaction(async tx=>{
+      const old=data(await tx.get(issueRef(range.id))),counter=data(await tx.get(counterRef));
+      revision(old,input.revision);
+      if(old?.audience||['sent','skipped'].includes(old?.status))M.fail('本期已開始處理，不能再次核准。',409);
+      if(counter?.activeIssueId&&counter.activeIssueId!==range.id)M.fail('前一期有寄送結果待核對，請先處理前一期。',409);
+      const digest=await automaticDigest(tx,range,range.id);
+      if(!digest.items.length)M.fail('本週沒有可寄送的文章，不會寄空信。',409);
+      if(digest.previewHash!==input.previewHash)M.fail('文章已變更，請先重新讀取預覽。',409);
+      const keep=new Set(digest.items.map(item=>item.noteId));
+      for(const item of old?.items||[])if(!keep.has(item.noteId))tx.delete(articleRef(item.noteId));
+      tx.set(issueRef(range.id),{id:range.id,mode:'automatic-week',...range,...digest,approvalHash:digest.previewHash,
+        status:'approved',revision:(old?.revision||0)+1,createdAtMs:old?.createdAtMs||now(),updatedAtMs:now(),approvedAtMs:now(),approvedBy:M.ADMIN,
+        snapshot:{subject:digest.subject,intro:'',items:digest.items,templateVersion:2}});
+      digest.items.forEach(item=>tx.set(articleRef(item.noteId),{state:'reserved',issueId:range.id}));
+    });
+    return {message:range.scheduledAtMs>now()?'已確認，將於週一上午 8 點寄送。':'已確認補寄，系統將在下一次處理時開始（最遲約 15 分鐘）。'};
+  }
   async function getState(id) {
     const next = M.nextMonday(now());
     if (id) M.validId(id);
@@ -237,6 +297,17 @@ function createNewsletterService({db, sendMail, now = Date.now, projectId = 'tan
       const issue = data(i), counter = data(c) || {lastIssued:0};
       if (!issue || !['approved','sending','partial'].includes(issue.status) || issue.leaseUntilMs > now() || issue.scheduledAtMs > now()) return null;
       if (!issue.snapshot?.items?.length) return null;
+      if(!issue.audience) {
+        if(issue.mode!=='automatic-week') {
+          tx.update(ref,{status:'blocked',error:'請至新版電子報管理重新預覽並確認本週寄送。'});return null;
+        }
+        const range=M.period(id),digest=await automaticDigest(tx,range,id);
+        if(digest.previewHash!==issue.approvalHash||!digest.items.length) {
+          tx.update(ref,{status:'draft',snapshot:null,revision:issue.revision+1,error:'文章清單或內容已變更，請重新確認。',updatedAtMs:now()});
+          issue.items.forEach(item=>tx.delete(articleRef(item.noteId)));
+          return null;
+        }
+      }
       const notes = await txDocs(tx, issue.items.map(item => db.doc('notes/' + item.noteId)));
       if (notes.some(s => data(s)?.status !== 'published')) {
         tx.update(ref, {status:'blocked', error:'本期有文章已下架，請核對後處理。', updatedAtMs:now()});
@@ -360,11 +431,11 @@ function createNewsletterService({db, sendMail, now = Date.now, projectId = 'tan
     if (issue?.scheduledAtMs === at && ['approved','sending','partial'].includes(issue.status)) await processIssue(id);
   }
   async function retryPending() {
-    const pending = await db.collection('newsletterIssues').where('status', 'in', ['sending','partial']).get();
+    const pending = await db.collection('newsletterIssues').where('status', 'in', ['approved','sending','partial']).get();
     for (const doc of pending.docs) await processIssue(doc.id);
   }
   async function admin(action, input = {}) {
-    const actions = {getState:() => getState(input.issueId), setSelection:() => setSelection(input), rememberLegacy:() => rememberLegacy(input), saveIssue:() => saveIssue(input),
+    const actions = {automaticState:()=>automaticState(input),testAutomatic:()=>testAutomatic(input),approveAutomatic:()=>approveAutomatic(input),getState:() => getState(input.issueId), setSelection:() => setSelection(input), rememberLegacy:() => rememberLegacy(input), saveIssue:() => saveIssue(input),
       previewIssue:() => previewIssue(input), testIssue:() => testIssue(input), approveIssue:() => approveIssue(input),
       revokeIssue:() => revokeIssue(input), retryIssue:() => retryIssue(input), resolveDelivery:() => resolveDelivery(input)};
     if (!Object.hasOwn(actions, action)) M.fail('不支援的電子報操作。');

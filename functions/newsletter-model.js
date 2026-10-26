@@ -36,11 +36,30 @@ function nextMonday(now) {
   const at = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + delta, 0);
   return {id: 'week-' + new Date(at + 8 * 3600000).toISOString().slice(0, 10), scheduledAtMs: at};
 }
+function period(id) {
+  validId(id);
+  if (!/^week-\d{4}-\d{2}-\d{2}$/.test(id)) fail('週別格式不正確。');
+  const end = Date.parse(id.slice(5)+'T00:00:00+08:00');
+  if (!Number.isFinite(end) || new Date(end+8*3600000).getUTCDay()!==1 || new Date(end+8*3600000).toISOString().slice(0,10)!==id.slice(5)) fail('週別必須是星期一。');
+  return {id,startAtMs:end-7*86400000,endAtMs:end,scheduledAtMs:end+8*3600000};
+}
+function currentPeriods(now) {
+  const local=new Date(Number(now)+8*3600000);
+  const monday=Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),local.getUTCDate()-((local.getUTCDay()+6)%7));
+  return [period('week-'+new Date(monday).toISOString().slice(0,10)),period('week-'+new Date(monday+7*86400000).toISOString().slice(0,10))];
+}
+function publishedMillis(value) {
+  if(value?.toMillis)return value.toMillis();
+  if(typeof value!=='string')return NaN;
+  if(/^\d{4}-\d{2}-\d{2}$/.test(value))value+='T00:00:00+08:00';
+  else if(!/(Z|[+-]\d{2}:\d{2})$/.test(value))value+='+08:00';
+  return Date.parse(value);
+}
 function sourceItem(id, note) {
   if (!note || note.status !== 'published') fail('電子報只能收錄已正式發布的文章。', 409);
   const item = {noteId:validId(id), title: String(note.titleZh || note.titleEn || '').trim(),
-    summary:String(note.summaryZh || note.summaryEn || '').trim(),
-    url:'https://tanji.tw/#/notes/' + encodeURIComponent(id), revision:Number(note.revision) || 0};
+    summary:String(note.summaryZh || note.summaryEn || String(note.bodyZh||note.bodyEn||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').slice(0,200)).trim(),
+    url:'https://tanji.tw/#/notes/' + encodeURIComponent(id), cover:/^https:\/\//i.test(note.cover||'')?String(note.cover):'', revision:Number(note.revision) || 0};
   if (!item.title) fail('已發布文章缺少標題。', 409);
   return {...item, sourceHash:hash(JSON.stringify(item))};
 }
@@ -61,9 +80,9 @@ function digestInput(input) {
 function renderDigest(snapshot, {number = null, unsubscribeUrl = '', test = false} = {}) {
   const label = number ? '第 ' + number + ' 期' : '期號於正式發行時編定';
   const subject = (test ? '【測試信】' : '') + '【碳吉筆記' + (number ? ' 第 ' + number + ' 期' : '') + '】' + snapshot.subject;
-  const items = snapshot.items.map(item => `<section style="margin:28px 0"><h2 style="font-size:20px;color:#fff">${escapeHTML(item.title)}</h2><p style="white-space:pre-wrap">${escapeHTML(item.summary)}</p><a style="color:#c6b6ff" href="${escapeHTML(item.url)}">閱讀完整內容 ↗</a></section>`).join('');
-  const optOut = unsubscribeUrl ? `<a style="color:#c6b6ff" href="${escapeHTML(unsubscribeUrl)}">取消訂閱</a>` : '測試／預覽不提供退訂操作';
-  const html = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#0d0b12;padding:24px;font-family:-apple-system,BlinkMacSystemFont,sans-serif"><main style="max-width:600px;margin:auto;background:#181622;color:#d8d2ea;padding:32px 24px;border-radius:12px;line-height:1.8">${test ? '<p style="color:#ffdfba">這是管理員測試信，未對訂閱者發送。</p>' : ''}<p style="color:#c6b6ff">TANJI NOTES · ${label}</p><h1 style="font-size:24px;color:#fff">${escapeHTML(snapshot.subject)}</h1><p style="white-space:pre-wrap">${escapeHTML(snapshot.intro)}</p>${items}<hr style="border:0;border-top:1px solid #332d4a"><p style="font-size:12px">您因訂閱 tanji.tw 的碳吉筆記而收到此信。${optOut}<br>© TanJi 碳吉 · <a style="color:#c6b6ff" href="https://tanji.tw">tanji.tw</a></p></main></body></html>`;
+  const items = snapshot.items.map(item => `<tr><td bgcolor="#181622" style="background-color:#181622;padding:28px 24px 12px;font-family:Arial,sans-serif;color:#f3f0fa;">${item.cover?`<img src="${escapeHTML(item.cover)}" alt="" width="552" style="display:block;width:100%;max-width:552px;height:auto;border-radius:10px;margin-bottom:20px;">`:''}<h2 style="color:#ffffff;font-size:22px;line-height:1.5;margin:0 0 16px;font-weight:700;">${escapeHTML(item.title)}</h2><p style="color:#e6e0f0;font-size:16px;line-height:1.85;margin:0 0 24px;white-space:pre-wrap;">${escapeHTML(item.summary)}</p><table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td bgcolor="#c6b6ff" style="background-color:#c6b6ff;border-radius:6px;"><a href="${escapeHTML(item.url)}" style="display:inline-block;padding:12px 28px;color:#181622;font-size:15px;font-weight:700;text-decoration:none;">閱讀完整內容 ↗</a></td></tr></table></td></tr>`).join('');
+  const optOut = unsubscribeUrl ? `<a style="color:#c6b6ff;text-decoration:underline;" href="${escapeHTML(unsubscribeUrl)}">取消訂閱</a>` : '這是預覽／測試，不會變更訂閱狀態';
+  const html = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"></head><body bgcolor="#0d0b12" style="margin:0;padding:24px 12px;background-color:#0d0b12;color:#f3f0fa;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#0d0b12"><tr><td align="center"><table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" bgcolor="#181622" style="width:100%;max-width:600px;background-color:#181622;border-radius:12px;"><tr><td bgcolor="#181622" style="padding:32px 24px 4px;background-color:#181622;font-family:Arial,sans-serif;color:#f3f0fa;">${test?'<p style="color:#ffdfba;font-size:14px;">管理員測試信，未對訂閱者寄送。</p>':''}<p style="color:#c6b6ff;font-size:13px;letter-spacing:1px;margin:0 0 12px;">TANJI NOTES · 碳吉筆記${number?' · 第 '+number+' 期':''}</p><h1 style="color:#ffffff;font-size:26px;line-height:1.5;margin:0;font-weight:700;">${escapeHTML(snapshot.subject)}</h1>${snapshot.intro?`<p style="color:#e6e0f0;font-size:16px;line-height:1.85;">${escapeHTML(snapshot.intro)}</p>`:''}</td></tr>${items}<tr><td bgcolor="#181622" style="padding:28px 24px 32px;background-color:#181622;"><hr style="border:0;border-top:1px solid #4a4060;margin:0 0 20px;"><p style="font-family:Arial,sans-serif;color:#c9c0d9;font-size:13px;line-height:1.85;margin:0;">您因在 tanji.tw 訂閱碳吉筆記而收到此信。<br>${optOut}<br>© TanJi 碳吉 · <a href="https://tanji.tw" style="color:#c6b6ff;text-decoration:none;">tanji.tw</a></p></td></tr></table></td></tr></table></body></html>`;
   const plain = ['碳吉筆記 · ' + label, snapshot.subject, snapshot.intro,
     ...snapshot.items.map(item => item.title + '\n' + item.summary + '\n' + item.url),
     unsubscribeUrl ? '取消訂閱：' + unsubscribeUrl : '測試／預覽不提供退訂操作'].join('\n\n');
@@ -77,4 +96,4 @@ function definitelyNotAccepted(error) {
 }
 
 module.exports = {ADMIN, FROM, MAX_ITEMS, MAX_AUDIENCE, BATCH_SIZE, LEASE_MS, RETRY_MS, MAX_ATTEMPTS,
-  hash, escapeHTML, fail, validId, emailAddress, isAdmin, nextMonday, sourceItem, digestInput, renderDigest, definitelyNotAccepted};
+  hash, escapeHTML, fail, validId, period, currentPeriods, publishedMillis, emailAddress, isAdmin, nextMonday, sourceItem, digestInput, renderDigest, definitelyNotAccepted};
