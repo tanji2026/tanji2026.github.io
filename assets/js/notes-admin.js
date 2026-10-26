@@ -47,7 +47,7 @@ function dialog(id){let d=document.getElementById(id);if(!d){d=document.createEl
 function localDate(iso){const d=iso?new Date(iso):new Date();if(isNaN(d))return '';return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);}
 function openNote(input){editing=input?C.clone(input):{id:'note-'+Date.now().toString(36),titleZh:'',titleEn:'',summaryZh:'',summaryEn:'',bodyZh:'<p><br></p>',bodyEn:'',author:'Coco',format:'note',categoryId:'',tags:[],cover:'',coverAlt:'',revision:0,publishedAt:'',createdAt:''};dirty=false;busy=false;activeLang='zh';savedRange=null;
  const n=editing,d=dialog('note-editor');
- d.innerHTML=`<form id="note-editor-form" method="dialog"><div class="dialog-head"><h2>${n.revision?'編輯筆記':'新增筆記'}</h2><button type="button" class="close-dialog" data-n-close aria-label="關閉筆記編輯">×</button></div><div class="dialog-body"><div class="form-grid">${field('titleZh','中文標題',n.titleZh,'text','maxlength="200"')}${field('titleEn','英文標題（選填）',n.titleEn,'text','maxlength="200"')}${field('author','作者',n.author||'Coco','text','maxlength="100"')}<label class="field"><span>文章格式</span><select name="format" id="note-format">${Object.entries(N.FORMATS).map(([v,l])=>`<option value="${v}" ${n.format===v?'selected':''}>${l[0]}</option>`).join('')}</select></label><label class="field"><span>文章分類</span><select name="categoryId"><option value="">未分類</option>${C.sorted(S.categories).filter(c=>!c.archived||c.id===n.categoryId).map(c=>`<option value="${E(c.id)}" ${n.categoryId===c.id?'selected':''}>${E(c.titleZh)}</option>`).join('')}</select></label>${field('tags','標籤，以逗號分隔',(n.tags||[]).join('，'))}${field('id','文章網址名稱',n.id,'text',n.revision?'readonly':'pattern="[a-zA-Z0-9_-]{1,80}" required')}${field('publishedAt','發布日期（留白則於首次發布時自動設定）',n.publishedAt?localDate(n.publishedAt):'','datetime-local')}<label class="field"><span>中文摘要</span><textarea name="summaryZh" maxlength="1000">${E(n.summaryZh||'')}</textarea></label><label class="field"><span>英文摘要（選填）</span><textarea name="summaryEn" maxlength="1000">${E(n.summaryEn||'')}</textarea></label>${field('cover','封面圖片網址',n.cover)}${field('coverAlt','封面圖片替代文字',n.coverAlt)}<div class="field wide"><div class="button-row"><button type="button" class="small-btn" data-n-cover-upload>上傳封面</button><button type="button" class="small-btn" data-open-media="cover">從媒體庫選封面</button></div><input id="cover-file" type="file" accept="image/*,.heic,.heif,.tif,.tiff,.avif,.jxl" hidden></div></div><fieldset class="note-news-fields" ${n.format==='news'?'':'hidden'}><legend>新聞來源</legend><div class="form-grid">${field('sourceTitle','新聞標題',n.sourceTitle)}${field('sourceName','來源媒體',n.sourceName)}${field('sourceDate','報導日期',n.sourceDate,'date')}${field('sourceUrl','原文網址',n.sourceUrl,'url')}</div><p class="admin-help">來源會自動呈現在文章前方，你的評論寫在下方內文。</p></fieldset><div class="note-editor-languages"><button type="button" class="small-btn" data-edit-language="zh" aria-pressed="true">中文內文</button><button type="button" class="small-btn" data-edit-language="en" aria-pressed="false">英文內文（選填）</button></div><div class="rich-toolbar" role="toolbar" aria-label="文章排版工具"><button type="button" data-rich="bold" title="粗體"><b>粗體</b></button><button type="button" data-rich="italic">斜體</button><button type="button" data-rich="underline">底線</button><button type="button" data-block="p">段落</button><button type="button" data-block="h2">標題</button><button type="button" data-block="h3">小標</button><button type="button" data-block="blockquote">引用</button><button type="button" data-rich="insertUnorderedList">項目清單</button><button type="button" data-rich="insertOrderedList">編號清單</button><button type="button" data-rich="justifyLeft">靠左</button><button type="button" data-rich="justifyCenter">置中</button><button type="button" data-rich="justifyRight">靠右</button><button type="button" data-rich="undo">復原</button><button type="button" data-rich="redo">重做</button><button type="button" data-insert-link>連結</button><button type="button" data-insert-table>插入表格</button><button type="button" data-table-action="row">增加列</button><button type="button" data-table-action="column">增加欄</button><button type="button" data-table-action="delete-row">刪除列</button><button type="button" data-table-action="delete-column">刪除欄</button><button type="button" data-table-action="delete">移除表格</button><button type="button" data-upload-inline>上傳圖片／影片</button><button type="button" data-open-media="body">媒體庫</button><button type="button" data-media-url>媒體網址</button><button type="button" data-youtube>YouTube</button><button type="button" data-media-size>圖片／影片大小</button></div><input id="inline-media-file" type="file" accept="${E(N.accept)}" multiple hidden><div id="note-body-zh" class="rich-editor note-body" contenteditable="true" role="textbox" aria-label="中文文章內文" aria-multiline="true">${N.sanitize(n.bodyZh)}</div><div id="note-body-en" class="rich-editor note-body" contenteditable="true" role="textbox" aria-label="英文文章內文" aria-multiline="true" hidden>${N.sanitize(n.bodyEn)}</div><p class="admin-help">表格工具會編輯游標所在的表格；圖片與影片的圖說可直接在下方輸入。英文留白時，英文頁會顯示原文。</p><p id="note-upload-progress" role="status"></p><p class="form-error" id="note-editor-error" role="alert"></p></div><div class="dialog-footer"><button class="btn" type="button" data-n-close>取消</button><button class="btn" type="button" data-note-preview>預覽</button><button class="btn" type="button" data-newsletter-preview>📧 電子報預覽</button><button class="btn" type="submit" value="draft">儲存文章草稿</button><button class="btn primary" type="submit" value="publish">發布文章</button></div></form>`;
+ d.innerHTML=`<form id="note-editor-form" method="dialog"><div class="dialog-head"><h2>${n.revision?'編輯筆記':'新增筆記'}</h2><button type="button" class="close-dialog" data-n-close aria-label="關閉筆記編輯">×</button></div><div class="dialog-body"><div class="form-grid">${field('titleZh','中文標題',n.titleZh,'text','maxlength="200"')}${field('titleEn','英文標題（選填）',n.titleEn,'text','maxlength="200"')}${field('author','作者',n.author||'Coco','text','maxlength="100"')}<label class="field"><span>文章格式</span><select name="format" id="note-format">${Object.entries(N.FORMATS).map(([v,l])=>`<option value="${v}" ${n.format===v?'selected':''}>${l[0]}</option>`).join('')}</select></label><label class="field"><span>文章分類</span><select name="categoryId"><option value="">未分類</option>${C.sorted(S.categories).filter(c=>!c.archived||c.id===n.categoryId).map(c=>`<option value="${E(c.id)}" ${n.categoryId===c.id?'selected':''}>${E(c.titleZh)}</option>`).join('')}</select></label>${field('tags','標籤，以逗號分隔',(n.tags||[]).join('，'))}${field('id','文章網址名稱',n.id,'text',n.revision?'readonly':'pattern="[a-zA-Z0-9_-]{1,80}" required')}${field('publishedAt','發布日期（留白則於首次發布時自動設定）',n.publishedAt?localDate(n.publishedAt):'','datetime-local')}<label class="field"><span>中文摘要</span><textarea name="summaryZh" maxlength="1000">${E(n.summaryZh||'')}</textarea></label><label class="field"><span>英文摘要（選填）</span><textarea name="summaryEn" maxlength="1000">${E(n.summaryEn||'')}</textarea></label>${field('cover','封面圖片網址',n.cover)}${field('coverAlt','封面圖片替代文字',n.coverAlt)}<div class="field wide"><div class="button-row"><button type="button" class="small-btn" data-n-cover-upload>上傳封面</button><button type="button" class="small-btn" data-open-media="cover">從媒體庫選封面</button></div><input id="cover-file" type="file" accept="image/*,.heic,.heif,.tif,.tiff,.avif,.jxl" hidden></div></div><fieldset class="note-news-fields" ${n.format==='news'?'':'hidden'}><legend>新聞來源</legend><div class="form-grid">${field('sourceTitle','新聞標題',n.sourceTitle)}${field('sourceName','來源媒體',n.sourceName)}${field('sourceDate','報導日期',n.sourceDate,'date')}${field('sourceUrl','原文網址',n.sourceUrl,'url')}</div><p class="admin-help">來源會自動呈現在文章前方，你的評論寫在下方內文。</p></fieldset><div class="note-editor-languages"><button type="button" class="small-btn" data-edit-language="zh" aria-pressed="true">中文內文</button><button type="button" class="small-btn" data-edit-language="en" aria-pressed="false">英文內文（選填）</button></div><div class="rich-toolbar" role="toolbar" aria-label="文章排版工具"><button type="button" data-rich="bold" title="粗體"><b>粗體</b></button><button type="button" data-rich="italic">斜體</button><button type="button" data-rich="underline">底線</button><button type="button" data-block="p">段落</button><button type="button" data-block="h2">標題</button><button type="button" data-block="h3">小標</button><button type="button" data-block="blockquote">引用</button><button type="button" data-rich="insertUnorderedList">項目清單</button><button type="button" data-rich="insertOrderedList">編號清單</button><button type="button" data-rich="justifyLeft">靠左</button><button type="button" data-rich="justifyCenter">置中</button><button type="button" data-rich="justifyRight">靠右</button><button type="button" data-rich="undo">復原</button><button type="button" data-rich="redo">重做</button><button type="button" data-insert-link>連結</button><button type="button" data-insert-table>插入表格</button><button type="button" data-table-action="row">增加列</button><button type="button" data-table-action="column">增加欄</button><button type="button" data-table-action="delete-row">刪除列</button><button type="button" data-table-action="delete-column">刪除欄</button><button type="button" data-table-action="delete">移除表格</button><button type="button" data-upload-inline>上傳圖片／影片</button><button type="button" data-open-media="body">媒體庫</button><button type="button" data-media-url>媒體網址</button><button type="button" data-youtube>YouTube</button><button type="button" data-media-size>圖片／影片大小</button></div><input id="inline-media-file" type="file" accept="${E(N.accept)}" multiple hidden><div id="note-body-zh" class="rich-editor note-body" contenteditable="true" role="textbox" aria-label="中文文章內文" aria-multiline="true">${N.sanitize(n.bodyZh)}</div><div id="note-body-en" class="rich-editor note-body" contenteditable="true" role="textbox" aria-label="英文文章內文" aria-multiline="true" hidden>${N.sanitize(n.bodyEn)}</div><p class="admin-help">表格工具會編輯游標所在的表格；圖片與影片的圖說可直接在下方輸入。英文留白時，英文頁會顯示原文。</p><p id="note-upload-progress" role="status"></p><p class="form-error" id="note-editor-error" role="alert"></p></div><div class="dialog-footer"><button class="btn" type="button" data-n-close>取消</button><button class="btn" type="button" data-note-preview>預覽</button><button class="btn" type="button" data-newsletter-preview>📧 電子報預覽</button><button class="btn" type="button" data-newsletter-preview>📧 電子報預覽</button><button class="btn" type="submit" value="draft">儲存文章草稿</button><button class="btn primary" type="submit" value="publish">發布文章</button></div></form>`;
  d.oncancel=e=>{if(busy){e.preventDefault();return;}if(dirty&&!confirm('有尚未儲存的筆記，確定關閉？'))e.preventDefault();};
  d.showModal();
 }
@@ -292,7 +292,94 @@ document.addEventListener('click',async e=>{
     return;
   }
 
-  if(el.hasAttribute('data-note-preview')){const n=N.validate(collect(),false),d=dialog('note-preview');d.innerHTML='<div class="dialog-head"><h2>文章預覽</h2><button type="button" class="close-dialog" id="close-note-preview" aria-label="關閉預覽">×</button></div><article class="dialog-body"><h1>'+E(N.text(n,'title',activeLang)||'未命名筆記')+'</h1><p>'+E(n.author)+'</p>'+N.sourceHTML(n,activeLang)+'<div class="note-body">'+N.sanitize(N.text(n,'body',activeLang))+'</div></article>';d.querySelector('#close-note-preview').onclick=()=>d.close();d.showModal();return;}
+  if(el.hasAttribute('data-newsletter-preview')){
+  const form = document.getElementById('note-editor-form');
+  const data = form ? new FormData(form) : new Map();
+  const titleZh = data.get('titleZh') || (typeof editing !== 'undefined' && editing && editing.titleZh) || '（尚未填寫中文標題）';
+  const summaryZh = data.get('summaryZh') || (typeof editing !== 'undefined' && editing && editing.summaryZh) || '（尚未填寫前言摘要）';
+  const noteId = (typeof editing !== 'undefined' && editing && editing.id) || 'preview-note';
+  const noteUrl = 'https://tanji.tw/#/notes/' + encodeURIComponent(noteId);
+
+  const d = dialog('note-preview');
+  d.innerHTML = `<div class="dialog-head">
+    <h2>📧 電子報即時預覽（碳吉筆記）</h2>
+    <button type="button" class="close-dialog" data-n-close aria-label="關閉預覽">×</button>
+  </div>
+  <div class="dialog-body" style="background:#0d0b12;padding:20px;max-height:70vh;overflow-y:auto;">
+    <div style="background:#201b2d;border:1px solid #4a4468;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:0.9rem;color:#d8d2ea;">
+      <div><strong style="color:#c6b6ff;">寄件者：</strong> TanJi 碳吉 &lt;tanji2026@gmail.com&gt;</div>
+      <div style="margin-top:4px;"><strong style="color:#c6b6ff;">信件主旨：</strong> 【碳吉筆記】${E(titleZh)}</div>
+    </div>
+    <div style="max-width:580px;margin:0 auto;background:#181622;color:#f3f0fa;padding:32px 24px;border-radius:12px;border:1px solid rgba(198,182,255,0.2);font-family:-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.7;">
+      <div style="font-size:12px;color:#c6b6ff;letter-spacing:1px;margin-bottom:8px;">TANJI NOTES · 碳吉筆記</div>
+      <h1 style="color:#ffffff;font-size:22px;margin:0 0 16px 0;">${E(titleZh)}</h1>
+      <p style="color:#d8d2ea;font-size:15px;margin-bottom:28px;">${E(summaryZh)}</p>
+      <div style="margin:28px 0;text-align:center;">
+        <a href="${noteUrl}" target="_blank" style="background:#c6b6ff;color:#181622;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">閱讀完整內容 ↗</a>
+      </div>
+      <hr style="border:none;border-top:1px solid #332d4a;margin:28px 0;" />
+      <p style="font-size:12px;color:#9b94b3;margin:0;line-height:1.8;">
+        您會收到這封信是因為您在碳吉官網（tanji.tw）訂閱了電子報。<br>
+        若不想再收到電子報，可點此取消訂閱。<br>
+        © TanJi 碳吉 · <a href="https://tanji.tw" style="color:#c6b6ff;text-decoration:none;">tanji.tw</a>
+      </p>
+    </div>
+    <div id="newsletter-action-msg" style="margin-top:20px;text-align:center;font-size:0.9rem;min-height:1.4em;"></div>
+  </div>
+  <div class="dialog-footer" style="display:flex;justify-content:space-between;align-items:center;">
+    <button class="btn" type="button" data-n-close>關閉</button>
+    <div style="display:flex;gap:10px;">
+      <button class="btn" type="button" id="btn-send-test-newsletter">✉️ 寄測試信給我</button>
+      <button class="btn primary" type="button" id="btn-send-mass-newsletter">🚀 正式群發給所有訂閱者</button>
+    </div>
+  </div>`;
+
+  d.querySelectorAll('[data-n-close], .close-dialog').forEach(b => { b.onclick = () => d.close(); });
+  if (typeof d.showModal === 'function' && !d.open) d.showModal();
+
+  const actionMsg = d.querySelector('#newsletter-action-msg');
+  const sendNewsletter = async (isTest) => {
+    if (!isTest && !confirm('確定要將這篇筆記正式群發給所有訂閱者嗎？')) return;
+    if (actionMsg) {
+      actionMsg.style.color = '#c6b6ff';
+      actionMsg.textContent = isTest ? '正在寄送測試信至 tanji2026@gmail.com...' : '正在正式群發電子報...';
+    }
+    try {
+      const auth = window.firebase && window.firebase.auth ? window.firebase.auth() : null;
+      const user = auth ? auth.currentUser : null;
+      if (!user) throw new Error('請先登入管理員帳號');
+      const token = await user.getIdToken();
+      const res = await fetch('https://asia-east1-tanji-official-1219f.cloudfunctions.net/sendNewsletter', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
+        body: JSON.stringify({noteId: noteId, isTest: isTest})
+      });
+      const resData = await res.json();
+      if (actionMsg) {
+        if (res.ok) {
+          actionMsg.style.color = '#8affb2';
+          actionMsg.textContent = resData.message || '發送成功！';
+        } else {
+          actionMsg.style.color = '#ff8a8a';
+          actionMsg.textContent = resData.error || '發送失敗，請稍後重試。';
+        }
+      }
+    } catch (err) {
+      if (actionMsg) {
+        actionMsg.style.color = '#ff8a8a';
+        actionMsg.textContent = '操作失敗：' + (err.message || '連線異常');
+      }
+    }
+  };
+
+  const testBtn = d.querySelector('#btn-send-test-newsletter');
+  if (testBtn) testBtn.onclick = () => sendNewsletter(true);
+  const massBtn = d.querySelector('#btn-send-mass-newsletter');
+  if (massBtn) massBtn.onclick = () => sendNewsletter(false);
+  return;
+}
+
+if(el.hasAttribute('data-note-preview')){const n=N.validate(collect(),false),d=dialog('note-preview');d.innerHTML='<div class="dialog-head"><h2>文章預覽</h2><button type="button" class="close-dialog" id="close-note-preview" aria-label="關閉預覽">×</button></div><article class="dialog-body"><h1>'+E(N.text(n,'title',activeLang)||'未命名筆記')+'</h1><p>'+E(n.author)+'</p>'+N.sourceHTML(n,activeLang)+'<div class="note-body">'+N.sanitize(N.text(n,'body',activeLang))+'</div></article>';d.querySelector('#close-note-preview').onclick=()=>d.close();d.showModal();return;}
 });
 window.addEventListener('beforeunload',e=>{if(dirty||busy){e.preventDefault();e.returnValue='';}});
 window.TanjiNotesAdmin={panel,reset(){invalidate('notes');invalidate('media');S.notes=[];S.categories=[];S.media=[];editing=null;dirty=false;for(const id of ['note-editor','media-picker','note-preview','note-category-dialog'])document.getElementById(id)?.close();}};
