@@ -110,3 +110,34 @@
     if (state.page !== 'contact' && !sending) render();
   }).catch(error=>console.info('TanJi uses bundled content:',error?.code||'offline'));
 })();
+
+// 電子報訂閱事件監聽（具備測試與跨環境相容防護）
+if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+  document.addEventListener("submit", async function(e) {
+    if (e.target && e.target.id === "newsletter-form") {
+      e.preventDefault();
+      const input = document.getElementById("newsletter-email");
+      const msg = document.getElementById("newsletter-msg");
+      const email = (input && input.value || "").trim();
+      if (!email) return;
+      if (msg) { msg.style.color = "#c6b6ff"; msg.textContent = "正在送出訂閱..."; }
+      try {
+        const res = await fetch("https://asia-east1-tanji-official-1219f.cloudfunctions.net/subscribeNewsletter", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({email, language: (window.TanjiCore && window.TanjiCore.getLang ? window.TanjiCore.getLang() : "zh")})
+        });
+        const data = await res.json();
+        if (res.ok) {
+          if (msg) { msg.style.color = "#8affb2"; msg.textContent = data.message || "訂閱成功！歡迎信已送達。"; }
+          if (input) input.value = "";
+        } else {
+          if (msg) { msg.style.color = "#ff8a8a"; msg.textContent = data.error || "訂閱失敗，請稍後重試。"; }
+        }
+      } catch (err) {
+        if (msg) { msg.style.color = "#ff8a8a"; msg.textContent = "連線失敗，請檢查網路。"; }
+      }
+    }
+  });
+}
+
