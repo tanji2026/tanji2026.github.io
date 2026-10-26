@@ -3,7 +3,7 @@ const {JSDOM}=require('jsdom'),fs=require('node:fs'),path=require('node:path'),a
 const root=path.resolve(__dirname,'..'),tick=()=>new Promise(resolve=>setImmediate(resolve));
 function setup(){
  const dom=new JSDOM('<!doctype html><body><div id="app"></div>',{runScripts:'outside-only',url:'https://tanji.tw/admin.html'}),w=dom.window;w.TextEncoder=TextEncoder;w.confirm=()=>true;w.alert=()=>{};w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
- for(const f of ['assets/js/core.js','assets/vendor/purify.min.js','assets/js/notes.js'])w.eval(fs.readFileSync(path.join(root,f),'utf8'));
+ for(const f of ['assets/js/core.js','assets/vendor/purify.min.js'])w.eval(fs.readFileSync(path.join(root,f),'utf8'));
  let notesCalls=0,mediaCalls=0,notesResult=()=>Promise.resolve({notes:[],categories:[]}),mediaResult=()=>Promise.resolve([]),tab='notes',renders=0;
  w.TanjiCloud={loadNotesAdmin(){notesCalls++;return notesResult(notesCalls);},listMedia(){mediaCalls++;return mediaResult(mediaCalls);},errorMessage:e=>e.message||String(e)};
  w.eval(fs.readFileSync(path.join(root,'assets/js/notes-admin.js'),'utf8'));

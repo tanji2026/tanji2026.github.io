@@ -4,7 +4,7 @@ const root=path.resolve(__dirname,'..');
 function setup(hash='home',lang='zh'){
  const dom=new JSDOM('<!doctype html><html><head><meta name="description"></head><body><div id="tanji-approved-preview"><div class="preview-app"></div></div><div id="admin-app"></div><dialog id="editor-dialog"></dialog><dialog id="confirm-dialog"></dialog></body></html>',{url:'https://tanji.tw/#/'+hash,runScripts:'outside-only'}),w=dom.window;
  w.TextEncoder=TextEncoder;w.requestAnimationFrame=()=>{};w.scrollTo=()=>{};w.console={...console,info(){},warn(){},error:console.error};w.localStorage.setItem('tanji-lang',lang);
- for(const file of ['data/content.js','assets/js/core.js','assets/js/media.js','assets/vendor/purify.min.js','assets/js/notes.js','assets/js/notes-views.js','assets/js/views.js'])w.eval(fs.readFileSync(path.join(root,file),'utf8'));
+ for(const file of ['data/content.js','assets/js/core.js','assets/vendor/purify.min.js','assets/js/views.js'])w.eval(fs.readFileSync(path.join(root,file),'utf8'));
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};return {dom,w,load:file=>w.eval(fs.readFileSync(path.join(root,file),'utf8'))};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));

@@ -1,7 +1,7 @@
 'use strict';
 const {JSDOM}=require('jsdom');const fs=require('node:fs');const assert=require('node:assert/strict');const path=require('node:path');
 const root=path.resolve(__dirname,'..'),dom=new JSDOM('<!doctype html><body><div id="app"></div>',{runScripts:'outside-only',url:'https://tanji.tw/admin.html'}),w=dom.window;w.TextEncoder=TextEncoder;w.confirm=()=>true;w.alert=()=>{};w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
-for(const name of ['assets/js/core.js','assets/vendor/purify.min.js','assets/js/notes.js'])w.eval(fs.readFileSync(path.join(root,name),'utf8'));
+for(const name of ['assets/js/core.js','assets/vendor/purify.min.js'])w.eval(fs.readFileSync(path.join(root,name),'utf8'));
 const writes=[];w.TanjiCloud={async loadNotesAdmin(){return {notes:[],categories:[]};},async listMedia(){return [];},errorMessage:e=>e.message,async saveNote(n,publishing){writes.push({n,publishing});return {...n,revision:(n.revision||0)+1,live:publishing};},async saveNoteCategory(){}};
 w.eval(fs.readFileSync(path.join(root,'assets/js/notes-admin.js'),'utf8'));
 function render(){w.document.getElementById('app').innerHTML=w.TanjiNotesAdmin.panel('notes',{render});}

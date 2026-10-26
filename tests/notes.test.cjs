@@ -2,7 +2,7 @@
 const {JSDOM}=require('jsdom');const fs=require('node:fs');const assert=require('node:assert/strict');const path=require('node:path');
 const root=path.resolve(__dirname,'..');
 const dom=new JSDOM('<!doctype html><body>',{runScripts:'outside-only',url:'https://tanji.tw/index.html'}),w=dom.window;w.TextEncoder=TextEncoder;
-for(const name of ['data/content.js','assets/js/core.js','assets/vendor/purify.min.js','assets/js/notes.js','assets/js/notes-views.js','assets/js/views.js'])w.eval(fs.readFileSync(path.join(root,name),'utf8'));
+for(const name of ['data/content.js','assets/js/core.js','assets/vendor/purify.min.js','assets/js/views.js'])w.eval(fs.readFileSync(path.join(root,name),'utf8'));
 const N=w.TanjiNotes,C=w.TanjiCore,seed=w.TANJI_SEED;
 const dirty='<script>alert(1)</script><img src="javascript:alert(1)" onerror="alert(1)"><p style="position:fixed;text-align:center">text</p><iframe src="https://evil.example"></iframe><a href="data:text/html,bad">bad</a><svg onload="alert(1)"></svg>';
 const clean=N.sanitize(dirty);assert(!/script|onerror|onload|javascript:|position:|evil.example|data:text/i.test(clean));assert(clean.includes('text-align: center'));

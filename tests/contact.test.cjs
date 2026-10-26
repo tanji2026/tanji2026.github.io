@@ -18,7 +18,7 @@ async function checkSubmission(fails) {
     FormData:class {get(key){return {name:'Test',email:'test@example.com',organization:'',subject:'Test message',message:'A test message.'}[key];}},
     window:{addEventListener(){}}
   };
-  for (const name of ['data/content.js','assets/js/core.js','assets/js/media.js','assets/js/views.js']) vm.runInNewContext(read(path.join(rootPath,name),'utf8'),scope);
+  for (const name of ['data/content.js','assets/js/core.js','assets/js/views.js']) vm.runInNewContext(read(path.join(rootPath,name),'utf8'),scope);
   scope.window.TanjiCloud = {async sendInquiry(data){writes++;assert.equal(data.email,'test@example.com');if(fails)throw {code:'permission-denied'};}};
   vm.runInNewContext(read(path.join(rootPath,'assets/js/site.js'),'utf8'),scope);
   await events.submit({target:form,preventDefault(){}});

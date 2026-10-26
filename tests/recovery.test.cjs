@@ -1,6 +1,6 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const scope={window:{},URL,TextEncoder};
-for(const file of ['data/content.js','assets/js/core.js','assets/js/media.js','assets/js/views.js']) vm.runInNewContext(fs.readFileSync(file,'utf8'),scope,{filename:file});
+for(const file of ['data/content.js','assets/js/core.js','assets/js/views.js']) vm.runInNewContext(fs.readFileSync(file,'utf8'),scope,{filename:file});
 const C=scope.window.TanjiCore,UI=scope.window.TanjiUI,seed=scope.window.TANJI_SEED;
 function render(c,page='projects'){return UI.renderPublic(C.toPublic(c),{page,lang:'zh',category:'all',projectsPage:1}).html;}
 const original=render(seed);

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const root = path.resolve(__dirname,'..');
 const scope = {window:{},URL,TextEncoder};
-for (const file of ['data/content.js','assets/js/core.js','assets/js/media.js','assets/js/views.js']) {
+for (const file of ['data/content.js','assets/js/core.js','assets/js/views.js']) {
   vm.runInNewContext(read(path.join(root,file),'utf8'),scope,{filename:file});
 }
 const {TanjiUI:UI,TanjiCore:C,TANJI_SEED:seed} = scope.window;
