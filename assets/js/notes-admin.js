@@ -155,9 +155,9 @@ document.addEventListener('click',async e=>{
       actionMsg.textContent = isTest ? '正在寄送測試信至 tanji2026@gmail.com...' : '正在正式群發電子報...';
     }
     try {
-      const auth = window.firebase && window.firebase.auth ? window.firebase.auth() : null;
-      const user = auth ? auth.currentUser : null;
-      if (!user) throw new Error('請先登入管理員帳號');
+      const { auth } = await (typeof authInit === 'function' ? authInit() : requireAdmin());
+      const user = auth.currentUser;
+      if (!user) throw new Error('登入逾時，請重新整理頁面登入管理員帳號');
       const token = await user.getIdToken();
       const res = await fetch('https://asia-east1-tanji-official-1219f.cloudfunctions.net/sendNewsletter', {
         method: 'POST',
