@@ -1,7 +1,0 @@
-碳吉筆記與後台更新
-先閱讀 UPDATE-NOTES.md。
-依原路徑覆蓋更新包內檔案，保留現有 data、seed.json 與 assets/images。
-筆記需發布新版 firestore.rules。
-媒體上傳需啟用 Firebase Storage 並發布 storage.rules；Storage 目前需要 Blaze 方案。
-文章分享封面另附 Firebase 函式，部署後再到網站設定填分享服務網址。
-沒有修改網域、沒有覆蓋正式資料，也沒有自動啟用計費。
