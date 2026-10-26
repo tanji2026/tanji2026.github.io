@@ -27,11 +27,58 @@ async function setInquiryRead(id){const {f,db}=await requireAdmin();await f.upda
 // Notes are independent from site/public: older content and backups remain valid.
 async function loadNotes(){const {f,db}=await init();const [notes,categories]=await Promise.all([f.getDocs(f.query(f.collection(db,'notes'),f.where('status','==','published'))),f.getDocs(f.collection(db,'noteCategories'))]);return {notes:notes.docs.map(d=>({...d.data(),id:d.id})),categories:categories.docs.map(d=>({...d.data(),id:d.id}))};}
 async function loadNotesAdmin(){const {f,db}=await requireAdmin();const [drafts,live,categories]=await Promise.all([f.getDocs(f.collection(db,'noteDrafts')),f.getDocs(f.collection(db,'notes')),f.getDocs(f.collection(db,'noteCategories'))]);const map=new Map(live.docs.map(d=>[d.id,{...d.data(),id:d.id,live:true}]));for(const d of drafts.docs)map.set(d.id,{...d.data(),id:d.id,live:map.has(d.id)});return {notes:[...map.values()],categories:categories.docs.map(d=>({...d.data(),id:d.id}))};}
-async function saveNote(input,publishNote=false){const N=window.TanjiNotes,n=N.validate(input,publishNote);const {f,db,auth}=await requireAdmin();const dref=f.doc(db,'noteDrafts',n.id),pref=f.doc(db,'notes',n.id);return f.runTransaction(db,async tx=>{const [d,p]=await Promise.all([tx.get(dref),tx.get(pref)]);const revision=d.exists()?d.data().revision:0;if(revision!==(Number(input.revision)||0))throw Error('這篇筆記已在其他視窗更新，請先儲存本機備份，再重新讀取。');if(!revision&&p.exists())throw Error('這個網址名稱已有文章，請更換網址名稱。');const now=new Date().toISOString();const {live,...data}=n;const value={...data,revision:revision+1,status:publishNote?'published':(p.exists()?'published':'draft'),createdAt:n.createdAt||now,updatedAt:f.serverTimestamp(),updatedBy:auth.currentUser.email};if(publishNote)value.publishedAt=n.publishedAt||now;tx.set(dref,value);if(publishNote)tx.set(pref,{...value,status:'published'});return {...value,live:publishNote||p.exists()};});}
-async function unpublishNote(id){const {f,db}=await requireAdmin();return f.runTransaction(db,async tx=>{const dref=f.doc(db,'noteDrafts',id),d=await tx.get(dref);if(d.exists())tx.update(dref,{status:'draft',revision:d.data().revision+1,updatedAt:f.serverTimestamp()});tx.delete(f.doc(db,'notes',id));});}
+// Only persist editable article fields. UI state and mail delivery metadata are not draft data.
+const NOTE_FIELDS=['id','titleZh','titleEn','summaryZh','summaryEn','bodyZh','bodyEn','author','format','categoryId','tags','cover','coverAlt','sourceTitle','sourceName','sourceDate','sourceUrl','publishedAt','createdAt'];
+async function saveNote(input,publishNote=false){
+ const n=window.TanjiNotes.validate(input,publishNote);
+ const {f,db,auth}=await requireAdmin(),dref=f.doc(db,'noteDrafts',n.id),pref=f.doc(db,'notes',n.id);
+ return f.runTransaction(db,async tx=>{
+  const [d,p]=await Promise.all([tx.get(dref),tx.get(pref)]),draftRevision=d.exists()?(Number(d.data().revision)||0):0;
+  const expected=d.exists()?draftRevision:(p.exists()?Number(p.data().revision)||0:0);
+  if(expected!==(Number(input.revision)||0))throw Error('這篇筆記已在其他視窗更新，請先儲存本機備份，再重新讀取。');
+  if(!d.exists()&&p.exists()&&!input.live)throw Error('這個網址名稱已有文章，請更換網址名稱。');
+  const fields=Object.fromEntries(NOTE_FIELDS.filter(key=>n[key]!==undefined).map(key=>[key,n[key]])),now=new Date().toISOString();
+  const value={...fields,revision:draftRevision+1,status:publishNote?'published':(p.exists()?'published':'draft'),createdAt:n.createdAt||now,updatedAt:f.serverTimestamp(),updatedBy:auth.currentUser.email};
+  if(publishNote)value.publishedAt=n.publishedAt||now;
+  tx.set(dref,value);
+  if(publishNote){
+   // Preserve evidence of legacy broadcasts; editing an article must not make it eligible again.
+   const legacy={};for(const key of ['newsletterSentAt','newsletterCount'])if(p.exists()&&p.data()[key]!==undefined)legacy[key]=p.data()[key];
+   tx.set(pref,{...value,...legacy,status:'published'});
+  }
+  return {...value,live:publishNote||p.exists()};
+ });
+}
+async function newsletter(action,input={}){
+ const {auth}=await requireAdmin(),token=await auth.currentUser.getIdToken(),controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),30000);
+ try{
+  const response=await fetch('https://asia-east1-tanji-official-1219f.cloudfunctions.net/newsletterAdmin',{
+   method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({action,input}),signal:controller.signal
+  });
+  let result;try{result=await response.json();}catch{throw Error('電子報服務尚未就緒，請確認後端已部署。');}
+  if(!response.ok)throw Error(result.error||'電子報操作未完成。');
+  return result;
+ }catch(error){if(error.name==='AbortError')throw Error('操作逾時，請重新讀取確認結果；不要重複點擊寄測試信。');throw error;}
+ finally{clearTimeout(timer);}
+}
+async function unpublishNote(id){
+ const {f,db,auth}=await requireAdmin(),pref=f.doc(db,'notes',id),dref=f.doc(db,'noteDrafts',id);
+ const before=await f.getDoc(pref);
+ if(before.exists()&&before.data().newsletterSentAt)await newsletter('rememberLegacy',{noteId:id});
+ return f.runTransaction(db,async tx=>{
+  const [d,p]=await Promise.all([tx.get(dref),tx.get(pref)]);
+  if(d.exists())tx.update(dref,{status:'draft',revision:d.data().revision+1,updatedAt:f.serverTimestamp()});
+  else if(p.exists()){
+   const n=window.TanjiNotes.validate({...p.data(),id},false),fields=Object.fromEntries(NOTE_FIELDS.filter(key=>n[key]!==undefined).map(key=>[key,n[key]]));
+   tx.set(dref,{...fields,status:'draft',revision:1,updatedAt:f.serverTimestamp(),updatedBy:auth.currentUser.email});
+  }
+  tx.delete(pref);
+ });
+}
 async function saveNoteCategory(category){const {f,db}=await requireAdmin();if(!/^[a-zA-Z0-9_-]{1,80}$/.test(category.id||'')||!String(category.titleZh||'').trim())throw Error('請填寫分類名稱。');await f.setDoc(f.doc(db,'noteCategories',category.id),{titleZh:String(category.titleZh).trim(),titleEn:String(category.titleEn||'').trim(),order:Number(category.order)||0,archived:!!category.archived});}
 async function listMedia(){const {f,db}=await requireAdmin();const snap=await f.getDocs(f.query(f.collection(db,'media'),f.orderBy('createdAt','desc'),f.limit(100)));return snap.docs.map(d=>({...d.data(),id:d.id}));}
 async function uploadMedia(file,onProgress){const info=window.TanjiNotes.fileInfo(file);const {app,f,db}=await requireAdmin();const storageSDK=await import('https://www.gstatic.com/firebasejs/13.0.0/firebase-storage.js');const id=crypto.randomUUID(),path='media/'+id+'.'+info.ext,ref=storageSDK.ref(storageSDK.getStorage(app),path);const task=storageSDK.uploadBytesResumable(ref,file,{contentType:info.mime,customMetadata:{originalName:file.name}});await new Promise((resolve,reject)=>task.on('state_changed',s=>onProgress?.(Math.round(s.bytesTransferred/s.totalBytes*100)),reject,resolve));const url=await storageSDK.getDownloadURL(ref);const media={id,name:file.name,url,path,kind:info.kind,mime:info.mime,size:file.size,createdAt:f.serverTimestamp()};try{await f.setDoc(f.doc(db,'media',id),media);}catch{throw Error('檔案已上傳，但媒體庫未儲存。請先發布新版 Firestore 規則。原檔網址：'+url);}return media;}
 
-window.TanjiCloud={loadNotes,loadNotesAdmin,saveNote,unpublishNote,saveNoteCategory,listMedia,uploadMedia,config,ADMIN,isAdmin,loadPublic,login,logout,watchAuth,loadAdmin,saveDraft,publish,listHistory,errorMessage,sendInquiry,listInquiries,setInquiryRead};
+window.TanjiCloud={newsletter,loadNotes,loadNotesAdmin,saveNote,unpublishNote,saveNoteCategory,listMedia,uploadMedia,config,ADMIN,isAdmin,loadPublic,login,logout,watchAuth,loadAdmin,saveDraft,publish,listHistory,errorMessage,sendInquiry,listInquiries,setInquiryRead};
 })();

@@ -20,3 +20,23 @@ body.admin-page{font-size:17px;}.admin-header h1{font-size:22px;}.admin-header p
 @media(max-width:640px){.admin-layout{grid-template-columns:1fr;}.admin-tab,.admin-actions .btn,.small-btn,.field>span,.check-field{font-size:16px;}.admin-header p,.admin-panel-head p,.admin-record p,.admin-help,.field small{font-size:14px;}.admin-sidebar{flex-direction:row;flex-wrap:wrap;}.summary-card span{font-size:14px;}.admin-record h3{font-size:18px;}.login-panel p{font-size:16px;}#note-editor .dialog-body{padding:20px 16px;}.rich-editor{padding:18px;min-height:320px;}.rich-toolbar{gap:6px;padding:9px;}.rich-toolbar button{font-size:14px;min-height:42px;}.note-body{font-size:17px;}.dialog-footer .btn{font-size:15px;padding-inline:12px;}.media-library{gap:12px;}.media-item{padding:10px;}.media-item img,.video-file{height:100px;}.admin-actions{gap:8px;}}
 
 .note-body td,.note-body th{height:48px;}
+/* Newsletter editor uses the existing admin palette and controls. */
+.nl-heading {display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.nl-heading h3,.nl-heading h4 {margin:0}
+.nl-heading p {margin:6px 0}
+.nl-candidates {display:grid;gap:10px;margin:16px 0;max-height:340px;overflow:auto}
+.nl-candidate {display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line,#393345);border-radius:10px}
+.nl-candidate span {flex:1;min-width:0;overflow-wrap:anywhere}
+.nl-candidate input {flex:0 0 auto;width:18px;height:18px;accent-color:#c6b6ff}
+.nl-candidate a {font-size:13px;white-space:nowrap;color:#c6b6ff}
+.nl-items {display:grid;gap:18px;margin:20px 0}
+.nl-item {padding:18px;border:1px solid var(--line,#393345);border-radius:12px}
+.nl-item .field {margin-top:14px}
+.nl-item a {color:#c6b6ff}
+.nl-actions {flex-wrap:wrap}
+.nl-resolve {padding:18px 0;border-top:1px solid var(--line,#393345)}
+.nl-resolve .field {margin:12px 0}
+.nl-preview-subject {margin:16px 24px;overflow-wrap:anywhere}
+.nl-preview-frame {display:block;width:100%;height:65vh;border:0;background:#0d0b12}
+#nl-save-status {font-size:13px;color:#d8d2ea}
+@media(max-width:600px) {.nl-candidate {flex-wrap:wrap}.nl-candidate a {margin-left:30px}.nl-item {padding:12px}.nl-actions .btn {width:100%}}

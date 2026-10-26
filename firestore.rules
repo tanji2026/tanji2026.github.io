@@ -67,9 +67,12 @@ service cloud.firestore {
       allow delete: if false;
     }
     // Separate collections preserve the existing site/public and history schema.
-    function validNote() {
+    function validNote(allowLegacy) {
       let d = request.resource.data;
-      return d.keys().hasOnly(['id','titleZh','titleEn','summaryZh','summaryEn','bodyZh','bodyEn','author','format','categoryId','tags','cover','coverAlt','sourceTitle','sourceName','sourceDate','sourceUrl','publishedAt','createdAt','revision','status','updatedAt','updatedBy'])
+      return d.keys().hasOnly(['id','titleZh','titleEn','summaryZh','summaryEn','bodyZh','bodyEn','author','format','categoryId','tags','cover','coverAlt','sourceTitle','sourceName','sourceDate','sourceUrl','publishedAt','createdAt','revision','status','updatedAt','updatedBy','newsletterSentAt','newsletterCount'])
+        && (allowLegacy || !d.keys().hasAny(['newsletterSentAt','newsletterCount']))
+        && (!d.keys().hasAny(['newsletterSentAt']) || (resource != null && d.newsletterSentAt == resource.data.get('newsletterSentAt', null)))
+        && (!d.keys().hasAny(['newsletterCount']) || (resource != null && d.newsletterCount == resource.data.get('newsletterCount', null)))
         && d.keys().hasAll(['id','titleZh','titleEn','bodyZh','bodyEn','author','format','categoryId','tags','revision','status','updatedAt','updatedBy'])
         && d.id is string && d.id.matches('^[a-zA-Z0-9_-]{1,80}$')
         && d.titleZh is string && d.titleZh.size() <= 200
@@ -84,14 +87,14 @@ service cloud.firestore {
     }
     match /noteDrafts/{id} {
       allow read: if isAdmin();
-      allow create: if isAdmin() && validNote() && request.resource.data.id == id && request.resource.data.revision == 1;
-      allow update: if isAdmin() && validNote() && request.resource.data.id == id
+      allow create: if isAdmin() && validNote(false) && request.resource.data.id == id && request.resource.data.revision == 1;
+      allow update: if isAdmin() && validNote(false) && request.resource.data.id == id
         && request.resource.data.revision == resource.data.revision + 1;
       allow delete: if false;
     }
     match /notes/{id} {
       allow read: if isAdmin() || resource.data.status == 'published';
-      allow create, update: if isAdmin() && validNote() && request.resource.data.id == id
+      allow create, update: if isAdmin() && validNote(true) && request.resource.data.id == id
         && request.resource.data.status == 'published';
       allow delete: if isAdmin();
     }
