@@ -101,36 +101,44 @@ document.addEventListener('click',async e=>{
  if(el.hasAttribute('data-media-url')){const url=prompt('圖片或影片的 HTTPS 網址');if(!url)return;if(!C.safeUrl(url)){error('請使用完整 HTTPS 網址。');return;}const video=confirm('這是影片嗎？按「確定」插入影片，按「取消」插入圖片。');insert(N.mediaHTML({url,kind:video?'video':'image',caption:'',name:''}));return;}
  if(el.hasAttribute('data-youtube')){const url=N.youtube(prompt('貼上 YouTube 影片網址'));if(!url){error('YouTube 網址不正確。');return;}insert('<figure><iframe src="'+E(url)+'" title="YouTube" allowfullscreen></iframe><figcaption></figcaption></figure><p><br></p>');return;}
  if(el.hasAttribute('data-media-size')){restoreSelection();const node=window.getSelection()?.anchorNode,element=node?.nodeType===1?node:node?.parentElement;const figure=element?.closest('figure');if(!figure){error('請先將游標放到圖片或影片的圖說中。');return;}const width=prompt('寬度百分比：25、50、75 或 100','100');if(!['25','50','75','100'].includes(width))return;figure.style.width=width+'%';setDirty();return;}
- if(el.hasAttribute('data-newsletter-preview')){
-    const n = N.validate(collect(), false);
-    const d = dialog('newsletter-preview');
-    const title = n.titleZh || '（尚未填寫中文標題）';
-    const summary = n.summaryZh || '（尚未填寫前言摘要）';
-    const noteUrl = 'https://tanji.tw/#/notes/' + encodeURIComponent(n.id);
+ 
+  if(el.hasAttribute('data-newsletter-preview')){
+    const form = document.getElementById('note-editor-form');
+    const data = form ? new FormData(form) : new Map();
+    const titleZh = data.get('titleZh') || (editing && editing.titleZh) || '（尚未填寫中文標題）';
+    const summaryZh = data.get('summaryZh') || (editing && editing.summaryZh) || '（尚未填寫前言摘要）';
+    const noteId = (editing && editing.id) || 'preview-note';
+    const noteUrl = 'https://tanji.tw/#/notes/' + encodeURIComponent(noteId);
+
+    // 共用後台現成已調好 CSS 的 note-preview 彈窗容器
+    const d = document.getElementById('note-preview');
+    if (!d) {
+      alert('找不到預覽彈窗容器');
+      return;
+    }
 
     d.innerHTML = `
       <div class="dialog-head">
         <h2>📧 電子報即時預覽（碳吉筆記）</h2>
         <button type="button" class="close-dialog" data-n-close aria-label="關閉預覽">×</button>
       </div>
-      <div class="dialog-body" style="background:#0d0b12;padding:20px;">
+      <div class="dialog-body" style="background:#0d0b12;padding:20px;max-height:70vh;overflow-y:auto;">
         <div style="background:#201b2d;border:1px solid #4a4468;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:0.9rem;color:#d8d2ea;">
           <div><strong style="color:#c6b6ff;">寄件者：</strong> TanJi 碳吉 &lt;tanji2026@gmail.com&gt;</div>
-          <div style="margin-top:4px;"><strong style="color:#c6b6ff;">主旨：</strong> 【碳吉筆記】${E(title)}</div>
+          <div style="margin-top:4px;"><strong style="color:#c6b6ff;">信件主旨：</strong> 【碳吉筆記】${E(titleZh)}</div>
         </div>
 
-        <!-- 擬真深紫系郵件排版 -->
         <div style="max-width:580px;margin:0 auto;background:#181622;color:#f3f0fa;padding:32px 24px;border-radius:12px;border:1px solid rgba(198,182,255,0.2);font-family:-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.7;">
           <div style="font-size:12px;color:#c6b6ff;letter-spacing:1px;margin-bottom:8px;">TANJI NOTES · 碳吉筆記</div>
-          <h1 style="color:#ffffff;font-size:22px;margin:0 0 16px 0;">${E(title)}</h1>
-          <p style="color:#d8d2ea;font-size:15px;margin-bottom:28px;">${E(summary)}</p>
+          <h1 style="color:#ffffff;font-size:22px;margin:0 0 16px 0;">${E(titleZh)}</h1>
+          <p style="color:#d8d2ea;font-size:15px;margin-bottom:28px;">${E(summaryZh)}</p>
           <div style="margin:28px 0;text-align:center;">
             <a href="${noteUrl}" target="_blank" style="background:#c6b6ff;color:#181622;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">閱讀完整內容 ↗</a>
           </div>
           <hr style="border:none;border-top:1px solid #332d4a;margin:28px 0;" />
           <p style="font-size:12px;color:#9b94b3;margin:0;line-height:1.8;">
             您會收到這封信是因為您在碳吉官網（tanji.tw）訂閱了電子報。<br>
-            若您不想再收到電子報，可點此 <a href="#" style="color:#c6b6ff;text-decoration:underline;" onclick="return false;">取消訂閱</a>。<br>
+            若不想再收到電子報，可點此 <a href="#" style="color:#c6b6ff;text-decoration:underline;" onclick="return false;">取消訂閱</a>。<br>
             © TanJi 碳吉 · <a href="https://tanji.tw" style="color:#c6b6ff;text-decoration:none;">tanji.tw</a>
           </p>
         </div>
@@ -146,7 +154,17 @@ document.addEventListener('click',async e=>{
       </div>
     `;
 
-    // 綁定發送事件
+    // 關閉按鈕事件
+    d.querySelectorAll('[data-n-close], .close-dialog').forEach(b => {
+      b.onclick = () => d.close();
+    });
+
+    // 強制開窗
+    if (typeof d.showModal === 'function' && !d.open) {
+      d.showModal();
+    }
+
+    // 發送邏輯
     const actionMsg = d.querySelector('#newsletter-action-msg');
     const sendNewsletter = async (isTest) => {
       if (!isTest && !confirm('確定要將這篇筆記正式群發給所有訂閱者嗎？')) return;
@@ -161,7 +179,7 @@ document.addEventListener('click',async e=>{
         const res = await fetch('https://asia-east1-tanji-official-1219f.cloudfunctions.net/sendNewsletter', {
           method: 'POST',
           headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
-          body: JSON.stringify({noteId: n.id, isTest})
+          body: JSON.stringify({noteId: noteId, isTest})
         });
         const data = await res.json();
         if (res.ok) {
